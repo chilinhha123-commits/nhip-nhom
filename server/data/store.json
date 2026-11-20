@@ -1,0 +1,107 @@
+{
+  "members": [
+    {
+      "id": "m-linh",
+      "name": "Nguyễn Ngọc Linh",
+      "email": "linh@example.com",
+      "color": "#7357d9"
+    },
+    {
+      "id": "m-minh",
+      "name": "Trần Quang Minh",
+      "email": "minh@example.com",
+      "color": "#e58b39"
+    },
+    {
+      "id": "m-ha",
+      "name": "Lê Thu Hà",
+      "email": "ha@example.com",
+      "color": "#36a28b"
+    },
+    {
+      "id": "m-nam",
+      "name": "Phạm Hoàng Nam",
+      "email": "nam@example.com",
+      "color": "#d86178"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-brief",
+      "title": "Hoàn thiện brief chiến dịch mùa hè",
+      "description": "Chốt thông điệp chính, chân dung khách hàng và các kênh triển khai.",
+      "status": "IN_PROGRESS",
+      "priority": "HIGH",
+      "assigneeId": "m-linh",
+      "supporterId": "m-minh",
+      "reviewerId": "m-ha",
+      "deadline": "2026-11-21T15:22:13.515Z",
+      "createdAt": "2026-11-20T11:22:13.517Z",
+      "documents": [
+        {
+          "id": "doc-brief",
+          "name": "Brief chiến dịch",
+          "url": "https://example.com/brief",
+          "createdAt": "2026-11-20T11:22:13.517Z"
+        }
+      ],
+      "comments": [
+        {
+          "id": "comment-brief",
+          "authorId": "m-minh",
+          "text": "Mình đã bổ sung phần insight khách hàng.",
+          "createdAt": "2026-11-20T11:22:13.517Z"
+        }
+      ],
+      "remindersSent": []
+    },
+    {
+      "id": "task-wireframe",
+      "title": "Rà soát wireframe trang chủ",
+      "description": "Kiểm tra luồng điều hướng trên desktop và mobile trước khi bàn giao.",
+      "status": "REVIEW",
+      "priority": "MEDIUM",
+      "assigneeId": "m-ha",
+      "supporterId": "m-nam",
+      "reviewerId": "m-linh",
+      "deadline": "2026-11-20T14:22:13.517Z",
+      "createdAt": "2026-11-20T11:22:13.517Z",
+      "documents": [],
+      "comments": [],
+      "remindersSent": [
+        "24h",
+        "1h"
+      ]
+    },
+    {
+      "id": "task-report",
+      "title": "Tổng hợp báo cáo tuần",
+      "description": "Cập nhật chỉ số và ghi chú các điểm cần theo dõi trong tuần.",
+      "status": "TODO",
+      "priority": "LOW",
+      "assigneeId": "m-nam",
+      "supporterId": "m-ha",
+      "reviewerId": "m-minh",
+      "deadline": "2026-11-22T15:22:13.517Z",
+      "createdAt": "2026-11-20T11:22:13.517Z",
+      "documents": [],
+      "comments": [],
+      "remindersSent": []
+    },
+    {
+      "id": "task-assets",
+      "title": "Bàn giao bộ nhận diện hình ảnh",
+      "description": "Xuất và sắp xếp các định dạng tài nguyên theo checklist.",
+      "status": "DONE",
+      "priority": "MEDIUM",
+      "assigneeId": "m-minh",
+      "supporterId": "m-linh",
+      "reviewerId": "m-nam",
+      "deadline": "2026-11-20T04:22:13.517Z",
+      "createdAt": "2026-11-20T11:22:13.517Z",
+      "documents": [],
+      "comments": [],
+      "remindersSent": []
+    }
+  ]
+}
