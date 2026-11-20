@@ -60,6 +60,13 @@ type UserSession = {
   user: Member;
   token?: string;
   demo: boolean;
+  workspaceId?: string;
+};
+
+type Workspace = {
+  id: string;
+  name: string;
+  ownerId: string;
 };
 
 type TaskDraft = Omit<Task, "id" | "createdAt" | "documents" | "comments">;
@@ -75,13 +82,6 @@ const priorities: { key: Priority; label: string }[] = [
   { key: "LOW", label: "Thấp" },
   { key: "MEDIUM", label: "Trung bình" },
   { key: "HIGH", label: "Cao" },
-];
-
-const defaultMembers: Member[] = [
-  { id: "m-linh", name: "Nguyễn Ngọc Linh", email: "linh@example.com", color: "#77bde5" },
-  { id: "m-minh", name: "Trần Quang Minh", email: "minh@example.com", color: "#8dc9e7" },
-  { id: "m-ha", name: "Lê Thu Hà", email: "ha@example.com", color: "#a5d5ec" },
-  { id: "m-nam", name: "Phạm Hoàng Nam", email: "nam@example.com", color: "#84b6d6" },
 ];
 
 const todayLabel = new Intl.DateTimeFormat("vi-VN", {
@@ -109,6 +109,7 @@ async function api<T>(
   const headers = new Headers(options.headers);
   if (session.token) headers.set("Authorization", `Bearer ${session.token}`);
   if (session.demo) headers.set("X-Demo-Email", session.user.email);
+  if (session.workspaceId) headers.set("X-Workspace-Id", session.workspaceId);
   if (options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -903,7 +904,6 @@ function TaskDetail({
 
 function LoginPage({
   config,
-  members,
   demoEmail,
   loadError,
   googleButtonWidth,
@@ -912,7 +912,6 @@ function LoginPage({
   onGoogleLogin,
 }: {
   config: Config;
-  members: Member[];
   demoEmail: string;
   loadError: string;
   googleButtonWidth: number;
@@ -945,23 +944,12 @@ function LoginPage({
             <CatPencilSticker className="preview-cat-sticker" />
             <div className="preview-heading">
               <span className="preview-sun">☼</span>
-              <span>NHỊP LÀM VIỆC HÔM NAY</span>
-              <span className="preview-count">03</span>
+              <span>KHÔNG GIAN CỦA BẠN</span>
             </div>
-            <div className="preview-task">
-              <span className="preview-check">✓</span>
-              <span>Hoàn thiện brief chiến dịch</span>
-              <small>Đang làm</small>
-            </div>
-            <div className="preview-task">
-              <span className="preview-check pending">○</span>
-              <span>Rà soát wireframe</span>
-              <small className="preview-due">Còn 3 giờ</small>
-            </div>
-            <div className="preview-task">
-              <span className="preview-check pending">○</span>
-              <span>Tổng hợp báo cáo tuần</span>
-              <small>Thứ Hai</small>
+            <div className="preview-empty">
+              <span aria-hidden="true">☁</span>
+              <strong>Bắt đầu từ trang trắng</strong>
+              <small>Tạo workspace riêng cho nhóm của bạn.</small>
             </div>
             <div className="preview-cloud" aria-hidden="true">☁</div>
           </div>
@@ -1018,18 +1006,17 @@ function LoginPage({
             <>
               <div className="separator"><span>HOẶC DÙNG THỬ BẢN DEMO</span></div>
               <div className="demo-picker">
-                <label htmlFor="demo-member">Chọn một thành viên</label>
-                <select
-                  id="demo-member"
+                <label htmlFor="demo-email">Email của bạn</label>
+                <input
+                  id="demo-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="ban@congty.com"
                   value={demoEmail}
                   onChange={(event) => onDemoEmailChange(event.target.value)}
-                >
-                  {members.map((member) => (
-                    <option key={member.id} value={member.email}>{member.name}</option>
-                  ))}
-                </select>
-                <button className="demo-button" onClick={onDemoLogin}>
-                  Vào bảng công việc <span aria-hidden="true">→</span>
+                />
+                <button className="demo-button" onClick={onDemoLogin} disabled={!demoEmail.trim()}>
+                  Tiếp tục <span aria-hidden="true">→</span>
                 </button>
               </div>
             </>
@@ -1038,7 +1025,7 @@ function LoginPage({
             <p className="inline-error">Chưa cấu hình GOOGLE_CLIENT_ID. Xem HUONG_DAN_CAI_DAT.md.</p>
           )}
           {loadError && <p className="login-error">{loadError}</p>}
-          <p className="login-foot">Dữ liệu demo được lưu cục bộ trên thiết bị này.</p>
+          <p className="login-foot">Mỗi workspace có thành viên và bảng công việc riêng.</p>
         </div>
       </section>
     </main>
@@ -1052,8 +1039,9 @@ export default function App() {
     emailConfigured: false,
   });
   const [session, setSession] = useState<UserSession | null>(getStoredUser);
-  const [members, setMembers] = useState<Member[]>(defaultMembers);
-  const [demoEmail, setDemoEmail] = useState(defaultMembers[0].email);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [demoEmail, setDemoEmail] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -1066,15 +1054,34 @@ export default function App() {
   const [view, setView] = useState<"board" | "list">("board");
   const [menuOpen, setMenuOpen] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
+  const [showMemberForm, setShowMemberForm] = useState(false);
   const currentUser = session?.user;
   const googleButtonWidth = Math.min(360, Math.max(220, window.innerWidth - 112));
 
   const reload = useCallback(async () => {
     if (!session) return;
     try {
+      const workspaceData = await api<Workspace[]>("/api/workspaces", session);
+      setWorkspaces(workspaceData);
+      const activeWorkspace = workspaceData.find((workspace) => workspace.id === session.workspaceId)
+        || workspaceData[0];
+      if (!activeWorkspace) {
+        setMembers([]);
+        setTasks([]);
+        setLoadError("");
+        return;
+      }
+      const scopedSession = { ...session, workspaceId: activeWorkspace.id };
+      if (session.workspaceId !== activeWorkspace.id) {
+        localStorage.setItem("nhip-nhom-user", JSON.stringify(scopedSession));
+        setSession(scopedSession);
+      }
       const [taskData, teamData] = await Promise.all([
-        api<Task[]>("/api/tasks", session),
-        api<Member[]>("/api/team", session),
+        api<Task[]>("/api/tasks", scopedSession),
+        api<Member[]>(`/api/workspaces/${activeWorkspace.id}/team`, scopedSession),
       ]);
       setTasks(taskData);
       setMembers(teamData);
@@ -1101,9 +1108,11 @@ export default function App() {
   }, [session, reload]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session?.workspaceId) return;
     const connection = io("/", {
-      auth: session.token ? { token: session.token } : { demoEmail: session.user.email },
+      auth: session.token
+        ? { token: session.token, workspaceId: session.workspaceId }
+        : { demoEmail: session.user.email, workspaceId: session.workspaceId },
     });
     connection.on("tasks:changed", reload);
     connection.on("connect_error", (error) =>
@@ -1144,14 +1153,29 @@ export default function App() {
   const detailTask = detailTaskId ? tasks.find((task) => task.id === detailTaskId) : undefined;
 
   function storeSession(next: UserSession) {
-    localStorage.setItem("nhip-nhom-user", JSON.stringify(next));
-    setSession(next);
+    const freshSession = { ...next, workspaceId: undefined };
+    localStorage.setItem("nhip-nhom-user", JSON.stringify(freshSession));
+    setSession(freshSession);
     setLoading(true);
   }
 
-  function demoLogin() {
-    const member = members.find((item) => item.email === demoEmail) || defaultMembers[0];
-    storeSession({ user: member, demo: true });
+  async function demoLogin() {
+    setBusy(true);
+    setLoadError("");
+    try {
+      const response = await fetch("/api/auth/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: demoEmail }),
+      });
+      const data = (await response.json()) as { user?: Member; error?: string };
+      if (!response.ok || !data.user) throw new Error(data.error || "Đăng nhập demo thất bại.");
+      storeSession({ user: data.user, demo: true });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Đăng nhập demo thất bại.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function googleLogin(result: CredentialResponse) {
@@ -1227,19 +1251,78 @@ export default function App() {
     }
   }
 
+  async function createWorkspace(event: FormEvent) {
+    event.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    try {
+      const workspace = await api<Workspace>("/api/workspaces", session, {
+        method: "POST",
+        body: JSON.stringify({ name: workspaceName }),
+      });
+      setLoadError("");
+      const nextSession = { ...session, workspaceId: workspace.id };
+      localStorage.setItem("nhip-nhom-user", JSON.stringify(nextSession));
+      setSession(nextSession);
+      setWorkspaces((current) => [...current, workspace]);
+      setWorkspaceName("");
+      setShowWorkspaceForm(false);
+      setLoading(true);
+      setNotice(`Đã tạo workspace "${workspace.name}".`);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Không tạo được workspace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addMember(event: FormEvent) {
+    event.preventDefault();
+    if (!session?.workspaceId) return;
+    setBusy(true);
+    try {
+      const team = await api<Member[]>(`/api/workspaces/${session.workspaceId}/members`, session, {
+        method: "POST",
+        body: JSON.stringify({ email: memberEmail }),
+      });
+      setMembers(team);
+      setMemberEmail("");
+      setShowMemberForm(false);
+      setNotice("Đã thêm email vào workspace. Thành viên có thể đăng nhập bằng địa chỉ này.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Không thêm được thành viên.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchWorkspace(workspaceId: string) {
+    if (!session || workspaceId === session.workspaceId) return;
+    const nextSession = { ...session, workspaceId };
+    localStorage.setItem("nhip-nhom-user", JSON.stringify(nextSession));
+    setSession(nextSession);
+    setTasks([]);
+    setMembers([]);
+    setDetailTaskId(null);
+    setLoading(true);
+  }
+
   function signOut() {
     localStorage.removeItem("nhip-nhom-user");
     setSession(null);
+    setWorkspaces([]);
+    setMembers([]);
     setTasks([]);
     setLoading(false);
     setDetailTaskId(null);
   }
 
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === session?.workspaceId);
+
   if (!session) {
     return (
       <LoginPage
         config={config}
-        members={members}
         demoEmail={demoEmail}
         loadError={loadError}
         googleButtonWidth={googleButtonWidth}
@@ -1247,6 +1330,53 @@ export default function App() {
         onDemoLogin={demoLogin}
         onGoogleLogin={googleLogin}
       />
+    );
+  }
+
+  if (!activeWorkspace && loading) {
+    return (
+      <main className="workspace-empty-page">
+        <div className="loading-state">
+          <div className="spinner" />
+          <p>Đang tải workspace...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!activeWorkspace) {
+    return (
+      <main className="workspace-empty-page">
+        <section className="workspace-empty-card">
+          <div className="brand">
+            <span className="brand-mark">n</span>
+            <span>nhịp nhóm</span>
+          </div>
+          <CloudSticker className="workspace-empty-cloud" />
+          <span className="eyebrow">CHÀO {currentUser?.name.toLocaleUpperCase("vi-VN")}</span>
+          <h1>Tạo workspace đầu tiên</h1>
+          <p>
+            Workspace mới bắt đầu hoàn toàn trống. Bạn có thể tạo bảng riêng và thêm thành viên
+            bằng email của họ.
+          </p>
+          {loadError && <p className="inline-error">{loadError}</p>}
+          <form onSubmit={createWorkspace} className="workspace-create-form">
+            <label htmlFor="first-workspace-name">Tên workspace</label>
+            <input
+              id="first-workspace-name"
+              value={workspaceName}
+              onChange={(event) => setWorkspaceName(event.target.value)}
+              placeholder="Ví dụ: Nhóm sản phẩm"
+              maxLength={80}
+              required
+            />
+            <button type="submit" className="button primary" disabled={busy}>
+              {busy ? "Đang tạo..." : "Tạo workspace"}
+            </button>
+          </form>
+          <button className="side-link workspace-signout" onClick={signOut}>Đăng xuất</button>
+        </section>
+      </main>
     );
   }
 
@@ -1260,11 +1390,39 @@ export default function App() {
         <div className="workspace-switch">
           <span className="workspace-icon">☁</span>
           <div>
-            <strong>Nhóm sáng tạo</strong>
+            <select
+              aria-label="Chọn workspace"
+              value={activeWorkspace.id}
+              onChange={(event) => switchWorkspace(event.target.value)}
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+              ))}
+            </select>
             <small>Không gian làm việc</small>
           </div>
-          <span className="switch-caret">⌄</span>
+          <button
+            className="workspace-add-button"
+            aria-label="Tạo workspace"
+            title="Tạo workspace"
+            onClick={() => setShowWorkspaceForm((open) => !open)}
+          >
+            ＋
+          </button>
         </div>
+        {showWorkspaceForm && (
+          <form className="sidebar-inline-form" onSubmit={createWorkspace}>
+            <input
+              aria-label="Tên workspace mới"
+              value={workspaceName}
+              onChange={(event) => setWorkspaceName(event.target.value)}
+              placeholder="Tên workspace"
+              maxLength={80}
+              required
+            />
+            <button type="submit" disabled={busy}>Tạo</button>
+          </form>
+        )}
 
         <div className="side-label">GÓC CỦA NHÓM</div>
         <nav className="side-nav">
@@ -1285,11 +1443,27 @@ export default function App() {
         <div className="side-label team-label">
           CÁC THÀNH VIÊN <span aria-hidden="true">✿</span>
         </div>
+        <button className="side-link add-member-toggle" onClick={() => setShowMemberForm((open) => !open)}>
+          <span>＋</span>Thêm thành viên bằng email
+        </button>
+        {showMemberForm && (
+          <form className="sidebar-inline-form" onSubmit={addMember}>
+            <input
+              aria-label="Email thành viên"
+              type="email"
+              value={memberEmail}
+              onChange={(event) => setMemberEmail(event.target.value)}
+              placeholder="email@congty.com"
+              required
+            />
+            <button type="submit" disabled={busy}>Thêm</button>
+          </form>
+        )}
         <div className="team-list">
           {members.map((member) => (
             <div className="team-person" key={member.id}>
               <Avatar member={member} size="small" />
-              <span>{member.name}</span>
+              <span title={member.email}>{member.name}</span>
               <i />
             </div>
           ))}
@@ -1316,7 +1490,7 @@ export default function App() {
       <main className="main-content">
         <header className="topbar">
           <div className="breadcrumbs">
-            <span>Nhóm sáng tạo</span>
+            <span>{activeWorkspace.name}</span>
             <b>/</b>
             <strong>{view === "board" ? "Tổng quan" : "Tất cả nhiệm vụ"}</strong>
           </div>
@@ -1327,7 +1501,7 @@ export default function App() {
               onClick={() =>
                 setNotice(
                   config.emailConfigured
-                    ? "Email nhắc hạn sẽ gửi tới ba vai trò được phân công."
+                    ? "Email nhắc hạn sẽ gửi tới các thành viên được phân công."
                     : "Email chưa cấu hình. Xem HUONG_DAN_CAI_DAT.md để bật nhắc hạn.",
                 )
               }
@@ -1356,18 +1530,7 @@ export default function App() {
         {session.demo && (
           <div className="demo-banner">
             <span>☁</span>
-            Bạn đang dùng dữ liệu mẫu, những thay đổi được lưu trên thiết bị này.
-            <button
-              onClick={() =>
-                setNotice(
-                  config.googleClientId
-                    ? "Đăng xuất để quay lại trang đăng nhập Google."
-                    : "Thêm GOOGLE_CLIENT_ID vào .env để bật đăng nhập Google.",
-                )
-              }
-            >
-              Tìm hiểu
-            </button>
+            Bạn đang dùng chế độ thử nghiệm. Không dùng cho dữ liệu nhạy cảm.
           </div>
         )}
         {!config.emailConfigured && (
@@ -1398,10 +1561,20 @@ export default function App() {
             <p>Chậm rãi một chút, cùng nhau đi thật xa.</p>
           </div>
           <CatPencilSticker className="heading-cat-sticker" />
-          <button className="button primary create-button" onClick={() => setModalTask("new")}>
+          <button
+            className="button primary create-button"
+            onClick={() => setModalTask("new")}
+            disabled={members.length < 3}
+            title={members.length < 3 ? "Thêm thành viên để phân đủ ba vai trò." : undefined}
+          >
             <span>＋</span>Tạo nhiệm vụ
           </button>
         </section>
+        {members.length < 3 && (
+          <p className="workspace-hint">
+            Thêm ít nhất {3 - members.length} thành viên bằng email để có thể phân công đủ ba vai trò.
+          </p>
+        )}
 
         <section className="stats-row" aria-label="Tổng quan tiến độ">
           <article className="stat-card">
@@ -1510,6 +1683,7 @@ export default function App() {
                     <button
                       aria-label={`Tạo nhiệm vụ ${status.label}`}
                       onClick={() => setModalTask("new")}
+                      disabled={members.length < 3}
                     >
                       ＋
                     </button>
@@ -1525,7 +1699,11 @@ export default function App() {
                       />
                     ))}
                     {columnTasks.length === 0 && (
-                      <button className="empty-column" onClick={() => setModalTask("new")}>
+                      <button
+                        className="empty-column"
+                        onClick={() => setModalTask("new")}
+                        disabled={members.length < 3}
+                      >
                         <span>＋</span> Thêm nhiệm vụ
                       </button>
                     )}
