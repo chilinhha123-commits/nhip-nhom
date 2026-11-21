@@ -34,6 +34,19 @@ function emptyStore() {
   return { users: [], workspaces: [] };
 }
 
+function normalizeInviteCode(code) {
+  return typeof code === "string" ? code.replace(/\s/g, "").toUpperCase() : "";
+}
+
+function generateInviteCode() {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code;
+  do {
+    code = Array.from({ length: 8 }, () => alphabet[crypto.randomInt(alphabet.length)]).join("");
+  } while (store.workspaces.some((workspace) => normalizeInviteCode(workspace.inviteCode) === code));
+  return code;
+}
+
 function readStore() {
   if (!fs.existsSync(databaseFile)) {
     const initial = emptyStore();
@@ -76,6 +89,7 @@ let saveQueue = Promise.resolve();
 async function initializeStore() {
   if (!mongoUri) {
     store = readStore();
+    await ensureWorkspaceInviteCodes();
     console.log("Đang sử dụng server/data/store.json (chưa cấu hình URI MongoDB).");
     return;
   }
@@ -105,6 +119,7 @@ async function initializeStore() {
         { upsert: true },
       );
     }
+    await ensureWorkspaceInviteCodes();
     console.log("Đã kết nối MongoDB database nhip_nhom.");
   } catch (error) {
     const code = error?.code || error?.name || "UNKNOWN";
@@ -119,6 +134,7 @@ async function initializeStore() {
       mongoClient = undefined;
     }
     store = readStore();
+    await ensureWorkspaceInviteCodes();
     console.warn("Đang fallback sang server/data/store.json; kiểm tra lại MONGODB_URI và kết nối mạng.");
   }
 }
@@ -149,6 +165,23 @@ function saveStore() {
 
 function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+async function ensureWorkspaceInviteCodes() {
+  const usedCodes = new Set();
+  let changed = false;
+  for (const workspace of store.workspaces) {
+    const code = normalizeInviteCode(workspace.inviteCode);
+    if (!/^[A-Z0-9]{6,8}$/.test(code) || usedCodes.has(code)) {
+      workspace.inviteCode = generateInviteCode();
+      changed = true;
+    } else if (workspace.inviteCode !== code) {
+      workspace.inviteCode = code;
+      changed = true;
+    }
+    usedCodes.add(workspace.inviteCode);
+  }
+  if (changed) await saveStore();
 }
 
 function normalizeEmail(email) {
@@ -199,7 +232,12 @@ function workspaceMembers(workspace) {
 }
 
 function workspaceSummary(workspace) {
-  return { id: workspace.id, name: workspace.name, ownerId: workspace.ownerId };
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    ownerId: workspace.ownerId,
+    inviteCode: workspace.inviteCode,
+  };
 }
 
 function workspaceForUser(workspaceId, user) {
@@ -332,12 +370,31 @@ app.post("/api/workspaces", authenticate, asyncRoute(async (req, res) => {
     id: `workspace-${crypto.randomUUID()}`,
     name,
     ownerId: req.user.id,
+    inviteCode: generateInviteCode(),
     memberEmails: [normalizeEmail(req.user.email)],
     tasks: [],
   };
   store.workspaces.push(workspace);
   await saveStore();
   res.status(201).json(workspaceSummary(workspace));
+}));
+
+app.post("/api/workspaces/join", authenticate, asyncRoute(async (req, res) => {
+  const code = normalizeInviteCode(req.body?.code);
+  if (!/^[A-Z0-9]{6,8}$/.test(code)) {
+    return res.status(400).json({ error: "Mã mời cần có từ 6 đến 8 ký tự chữ hoặc số." });
+  }
+  const workspace = store.workspaces.find(
+    (item) => normalizeInviteCode(item.inviteCode) === code,
+  );
+  if (!workspace) return res.status(404).json({ error: "Không tìm thấy nhóm với mã mời này." });
+
+  const email = normalizeEmail(req.user.email);
+  if (!workspace.memberEmails.some((memberEmail) => normalizeEmail(memberEmail) === email)) {
+    workspace.memberEmails.push(email);
+    await saveStore();
+  }
+  res.json(workspaceSummary(workspace));
 }));
 
 app.get("/api/workspaces/:workspaceId/team", authenticate, (req, res) => {
