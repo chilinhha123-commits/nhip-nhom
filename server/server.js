@@ -413,7 +413,16 @@ async function sendMail(subject, text, recipients) {
 
 function taskMailText(task, workspace, prefix) {
   const memberNames = (ids) => ids.map((id) => workspaceMembers(workspace).find((member) => member.id === id)?.name || "").filter(Boolean).join(", ");
-  return `${prefix}\n\nNhiệm vụ: ${task.title}\nHạn hoàn thành: ${new Date(task.deadline).toLocaleString("vi-VN")}\nPhụ trách: ${memberNames([task.assigneeId])}\nHỗ trợ: ${memberNames([task.supporterId])}\nKiểm tra chéo: ${memberNames([task.reviewerId])}\n\nMở ứng dụng Nhịp Nhóm để xem chi tiết.`;
+  const formattedDeadline = new Date(task.deadline).toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return `${prefix}\n\nNhiệm vụ: ${task.title}\nHạn hoàn thành: ${formattedDeadline}\nPhụ trách: ${memberNames([task.assigneeId])}\nHỗ trợ: ${memberNames([task.supporterId])}\nKiểm tra chéo: ${memberNames([task.reviewerId])}\n\nMở ứng dụng Nhịp Nhóm để xem chi tiết.`;
 }
 
 app.post("/api/tasks", authenticate, requireWorkspace, async (req, res) => {
