@@ -328,24 +328,42 @@ async function sendMail(subject, text, recipients) {
     console.error(`SMTP: chưa gửi "${subject}" vì thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD.`);
     return ["Email chưa được gửi: hãy cấu hình GMAIL_USER và GMAIL_APP_PASSWORD trong .env."];
   }
+  const smtpPort = Number(process.env.SMTP_PORT || "587");
+  const secure = smtpPort === 465;
   const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: smtpPort,
+    secure,
+    requireTLS: !secure,
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
-  const results = await Promise.allSettled(recipients.map((to) => transporter.sendMail({
-    from: `"Nhịp Nhóm" <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    text,
-  })));
-  const failures = results.filter((result) => result.status === "rejected");
-  failures.forEach((result) => console.error(`SMTP: gửi email "${subject}" thất bại:`, result.reason));
+
+  let failures = 0;
+  for (const to of new Set(recipients.filter(Boolean))) {
+    try {
+      await transporter.sendMail({
+        from: `"Nhịp Nhóm" <${process.env.GMAIL_USER}>`,
+        to,
+        subject,
+        text,
+      });
+      console.log(`SMTP: đã gửi thành công "${subject}" tới ${to}.`);
+    } catch (error) {
+      failures += 1;
+      const code = error?.code || "UNKNOWN";
+      const command = error?.command ? `, command=${error.command}` : "";
+      console.error(`SMTP: gửi email "${subject}" tới ${to} thất bại (code=${code}${command})`, error);
+    }
+  }
   if (recipients.length === 0) {
     console.warn(`SMTP: không có người nhận hợp lệ cho email "${subject}".`);
-  } else if (failures.length === 0) {
-    console.log(`SMTP: đã gửi thành công "${subject}" tới ${recipients.join(", ")}.`);
   }
-  return failures.length ? [`Không gửi được email tới ${failures.length} thành viên; kiểm tra cấu hình Gmail.`] : [];
+  return failures
+    ? [`Không gửi được email tới ${failures} thành viên; kiểm tra cấu hình Gmail và log SMTP.`]
+    : [];
 }
 
 function taskMailText(task, workspace, prefix) {
