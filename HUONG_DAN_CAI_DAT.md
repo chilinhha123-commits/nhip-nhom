@@ -1,6 +1,6 @@
 # Hướng dẫn cài đặt Nhịp Nhóm
 
-Ứng dụng gồm giao diện React + TypeScript, API Node.js/Express, dữ liệu mẫu và dữ liệu lưu cục bộ trong `server/data/store.json`. Chế độ dùng thử được bật sẵn; có thể mở bảng công việc mà chưa cấu hình Google hoặc email.
+Ứng dụng gồm giao diện React + TypeScript, API Node.js/Express và dữ liệu lưu cục bộ trong `server/data/store.json`. Kho dữ liệu ban đầu trống; mỗi người tạo workspace riêng và có thể thêm thành viên bằng email.
 
 ## 1. Yêu cầu
 
@@ -24,7 +24,7 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-File `.env` đã có sẵn với cấu hình demo. Mở file này để điền thông tin Google/Gmail ở các bước bên dưới. Mở **http://localhost:5173** và chọn một thành viên mẫu để vào bảng. Nhiệm vụ mẫu được tự tạo khi máy chủ khởi động lần đầu. Những thay đổi tiếp theo được lưu trên máy trong `server/data/store.json`; tệp tải lên được lưu trong `server/uploads/`.
+File `.env` đã có sẵn với cấu hình demo. Mở file này để điền thông tin Google/Gmail ở các bước bên dưới. Mở **http://localhost:5173**, đăng nhập demo bằng email của bạn hoặc đăng nhập Google, sau đó tạo workspace. Không có thành viên hay nhiệm vụ mẫu được tạo sẵn. Dữ liệu được lưu trên máy trong `server/data/store.json`; tệp tải lên được lưu trong `server/uploads/`.
 
 Trên PowerShell Windows, dùng `npm.cmd` nếu chính sách thực thi chặn `npm.ps1`. Nếu vừa cài Node.js mà lệnh chưa nhận ra, hãy mở terminal mới hoặc khởi động lại VS Code.
 
@@ -72,13 +72,27 @@ Không đưa `.env` lên GitHub hoặc chia sẻ Client Secret/credential. Ứng
    ```
 
 4. Khởi động lại `npm run dev`. Khi tạo nhiệm vụ, ứng dụng gửi email tới ba địa chỉ được phân công; máy chủ kiểm tra mỗi phút để gửi nhắc hạn trước 24 giờ và trước 1 giờ. Nhiệm vụ đã hoàn thành sẽ không nhận nhắc hạn.
-5. Trong chế độ demo, địa chỉ mẫu `example.com` không phải hộp thư thật. Để kiểm tra email thật, dùng đăng nhập/tài khoản thành viên có Gmail thật (hoặc cập nhật thành viên mẫu trong `server/server.js` trước khi máy chủ tạo `server/data/store.json`).
+5. Để kiểm tra email thật, dùng địa chỉ Gmail của các thành viên đã thêm vào workspace.
+
+Thêm thành viên bằng email sẽ lưu địa chỉ đó vào workspace. Thành viên cần đăng nhập bằng đúng email đã thêm để thấy workspace; lời mời hiện chưa gửi email riêng.
 
 Nếu chưa cấu hình email, ứng dụng vẫn chạy bình thường và báo rõ rằng email chưa được gửi. Nhật ký lỗi gửi email nằm trong terminal đang chạy máy chủ.
+
+### Thiết lập email trên Render
+
+Trong Render Dashboard, mở **Web Service → Environment** rồi thêm các biến sau:
+
+| Biến | Giá trị |
+|---|---|
+| `GMAIL_USER` | Gmail dùng để gửi, ví dụ `ten-cua-ban@gmail.com` |
+| `GMAIL_APP_PASSWORD` | Mật khẩu ứng dụng 16 ký tự của Gmail |
+
+Sau khi thêm biến, nhấn **Save Changes** để Render triển khai lại dịch vụ. Các biến tùy chọn khác vẫn có thể cấu hình như `GOOGLE_CLIENT_ID`, `DEMO_MODE`, `CLIENT_ORIGIN` và `PORT`. Máy chủ kiểm tra hạn nhiệm vụ khi khởi động và sau đó mỗi phút; khi còn dưới 24 giờ, nó gửi nhắc hạn tới Gmail của các thành viên được phân công và lưu `remindersSent` trong `store.json` để không gửi trùng.
 
 ## 5. Các chức năng hiện có
 
 - Bảng Kanban và danh sách, lọc trạng thái/ưu tiên, tìm kiếm và thống kê.
+- Tạo nhiều workspace riêng, chuyển đổi giữa các workspace, mời thành viên theo email và tách dữ liệu bảng theo workspace.
 - Tạo/chỉnh sửa nhiệm vụ, ba vai trò riêng biệt, chọn người kiểm tra thủ công hoặc random trong số thành viên còn lại.
 - Đồng hồ đếm ngược từng giây, cảnh báo màu đỏ khi còn dưới 24 giờ hoặc quá hạn.
 - Email thông báo khi giao nhiệm vụ và email nhắc hạn 24 giờ/1 giờ nếu đã cấu hình Gmail.
@@ -92,9 +106,9 @@ Các biến môi trường có trong `.env.example`:
 |---|---|---|
 | `PORT` | `4000` | Cổng API và ứng dụng production |
 | `CLIENT_ORIGIN` | `http://localhost:5173` | Origin được phép kết nối khi phát triển |
-| `DEMO_MODE` | `true` | Cho phép chọn thành viên mẫu mà không đăng nhập Google |
+| `DEMO_MODE` | `true` | Cho phép đăng nhập thử bằng email mà không xác minh Google; tắt để yêu cầu đăng nhập Google |
 | `GOOGLE_CLIENT_ID` | *(trống)* | Google OAuth Client ID |
 | `GMAIL_USER` | *(trống)* | Gmail gửi email |
 | `GMAIL_APP_PASSWORD` | *(trống)* | App Password của Gmail |
 
-Dữ liệu demo lưu trên máy, không có cơ sở dữ liệu cloud hay đồng bộ giữa nhiều máy chủ. Khi triển khai công khai cho nhiều người dùng, cần thay kho JSON bằng cơ sở dữ liệu phù hợp, cấu hình HTTPS, sao lưu và bảo vệ tệp `.env`/thư mục uploads.
+Dữ liệu workspace lưu trên máy, không có cơ sở dữ liệu cloud hay đồng bộ giữa nhiều máy chủ. Chế độ demo không xác minh danh tính email, chỉ nên dùng để thử nghiệm cục bộ. Khi triển khai công khai cho nhiều người dùng, cần thay kho JSON bằng cơ sở dữ liệu phù hợp, cấu hình HTTPS, sao lưu và bảo vệ tệp `.env`/thư mục uploads.

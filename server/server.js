@@ -87,7 +87,13 @@ function userIdForEmail(email) {
 function userFromEmail(email, name) {
   const normalizedEmail = normalizeEmail(email);
   const found = store.users.find((user) => normalizeEmail(user.email) === normalizedEmail);
-  if (found) return found;
+  if (found) {
+    if (typeof name === "string" && name.trim()) {
+      found.name = name.trim();
+      saveStore();
+    }
+    return found;
+  }
   const user = {
     id: userIdForEmail(normalizedEmail),
     name: name?.trim() || normalizedEmail.split("@")[0],
@@ -105,9 +111,12 @@ function workspaceMembers(workspace) {
   ) || {
     id: userIdForEmail(email),
     name: email.split("@")[0],
-    email,
+    email: normalizeEmail(email),
     color: "#7357d9",
-  });
+  }).map((member) => ({
+    ...member,
+    name: member.name?.trim() || normalizeEmail(member.email).split("@")[0],
+  }));
 }
 
 function workspaceSummary(workspace) {
@@ -258,6 +267,9 @@ app.post("/api/workspaces/:workspaceId/members", authenticate, (req, res) => {
   if (!workspace) return res.status(404).json({ error: "Không tìm thấy workspace." });
   const email = normalizeEmail(req.body?.email || "");
   if (!isValidEmail(email)) return res.status(400).json({ error: "Vui lòng nhập địa chỉ email hợp lệ." });
+  const displayName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const member = userFromEmail(email, displayName);
+  if (typeof displayName === "string" && displayName) member.name = displayName;
   if (!workspace.memberEmails.some((memberEmail) => normalizeEmail(memberEmail) === email)) {
     workspace.memberEmails.push(email);
     saveStore();
@@ -285,12 +297,13 @@ function validateTask(input, workspace) {
   if (!priorities.includes(input.priority)) return "Mức ưu tiên không hợp lệ.";
   if (!Number.isFinite(Date.parse(input.deadline))) return "Vui lòng chọn thời hạn hợp lệ.";
   const memberIds = new Set(workspaceMembers(workspace).map((member) => member.id));
-  if (!memberIds.has(input.assigneeId) || !memberIds.has(input.supporterId) || !memberIds.has(input.reviewerId)) {
-    return "Vui lòng chọn thành viên có trong nhóm cho cả ba vai trò.";
+  if (!memberIds.has(input.assigneeId)) {
+    return "Vui lòng chọn thành viên phụ trách có trong nhóm.";
   }
-  if (input.assigneeId === input.reviewerId) return "Người kiểm tra chéo phải khác người phụ trách chính.";
-  if (input.assigneeId === input.supporterId || input.supporterId === input.reviewerId) {
-    return "Ba vai trò cần được phân cho các thành viên khác nhau.";
+  for (const roleId of [input.supporterId, input.reviewerId]) {
+    if (roleId && !memberIds.has(roleId)) {
+      return "Vai trò hỗ trợ và kiểm tra chéo phải thuộc thành viên trong nhóm.";
+    }
   }
   return "";
 }
@@ -335,8 +348,8 @@ app.post("/api/tasks", authenticate, requireWorkspace, async (req, res) => {
     status: req.body.status,
     priority: req.body.priority,
     assigneeId: req.body.assigneeId,
-    supporterId: req.body.supporterId,
-    reviewerId: req.body.reviewerId,
+    supporterId: req.body.supporterId || req.body.assigneeId,
+    reviewerId: req.body.reviewerId || req.body.assigneeId,
     deadline: new Date(req.body.deadline).toISOString(),
     createdAt: new Date().toISOString(),
     documents: [],
@@ -367,8 +380,8 @@ app.put("/api/tasks/:id", authenticate, requireWorkspace, async (req, res) => {
     status: req.body.status,
     priority: req.body.priority,
     assigneeId: req.body.assigneeId,
-    supporterId: req.body.supporterId,
-    reviewerId: req.body.reviewerId,
+    supporterId: req.body.supporterId || req.body.assigneeId,
+    reviewerId: req.body.reviewerId || req.body.assigneeId,
     deadline: new Date(req.body.deadline).toISOString(),
     remindersSent: changedAssignees || changedDeadline ? [] : existing.remindersSent,
   };
@@ -506,9 +519,12 @@ async function sendDueReminders() {
       for (const [key, hours, label] of [["24h", 24, "còn 24 giờ"], ["1h", 1, "còn 1 giờ"]]) {
         if (millisecondsRemaining > 0 && millisecondsRemaining <= hours * 60 * 60 * 1000 && !(task.remindersSent || []).includes(key)) {
           const warnings = await sendMail(`Nhắc hạn (${label}): ${task.title}`, taskMailText(task, workspace, `Nhiệm vụ sắp đến hạn, ${label}.`), emailRecipients(task, workspace));
-          if (warnings.length) console.warn(`Nhắc hạn ${key} cho ${task.id} chưa gửi: ${warnings.join(" ")}`);
-          task.remindersSent = [...(task.remindersSent || []), key];
-          saveStore();
+          if (warnings.length) {
+            console.warn(`Nhắc hạn ${key} cho ${task.id} chưa gửi: ${warnings.join(" ")}`);
+          } else {
+            task.remindersSent = [...(task.remindersSent || []), key];
+            saveStore();
+          }
         }
       }
     }
@@ -518,6 +534,7 @@ async function sendDueReminders() {
 setInterval(() => {
   sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn thất bại:", error));
 }, 60_000).unref();
+sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn khởi động thất bại:", error));
 
 httpServer.listen(port, () => {
   console.log(`API Nhịp Nhóm đang chạy tại http://localhost:${port}`);

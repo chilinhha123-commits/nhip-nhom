@@ -136,6 +136,11 @@ function memberColor(member?: Member) {
   return palette[index % palette.length];
 }
 
+function memberLabel(member?: Member) {
+  if (!member) return "";
+  return `${member.name} (${member.email})`;
+}
+
 function Avatar({
   member,
   size = "normal",
@@ -296,7 +301,7 @@ function TaskCard({
       <div className="card-footer">
         <div
           className="assignee-stack"
-          aria-label={`Phụ trách: ${person(task.assigneeId)?.name || "chưa gán"}`}
+          aria-label={`Phụ trách: ${memberLabel(person(task.assigneeId)) || "chưa gán"}`}
         >
           {[task.assigneeId, task.supporterId, task.reviewerId].map((id) => (
             <Avatar key={id} size="small" member={person(id)} />
@@ -333,7 +338,7 @@ function TaskForm({
   const initialSupporter =
     task?.supporterId ||
     members.find((member) => member.id !== initialAssignee)?.id ||
-    "";
+    initialAssignee;
   const [title, setTitle] = useState(task?.title || "");
   const [description, setDescription] = useState(task?.description || "");
   const [status, setStatus] = useState<Status>(task?.status || "TODO");
@@ -349,24 +354,15 @@ function TaskForm({
   );
   const [formError, setFormError] = useState("");
 
-  const reviewerOptions = members.filter(
-    (member) => member.id !== assigneeId && member.id !== supporterId,
-  );
+  const reviewerOptions = members;
 
   useEffect(() => {
-    if (supporterId === assigneeId) {
-      setSupporterId(members.find((member) => member.id !== assigneeId)?.id || "");
-    }
-    if (!reviewerOptions.some((member) => member.id === reviewerId)) {
-      setReviewerId("");
-    }
-  }, [assigneeId, supporterId]);
+    if (!supporterId && initialAssignee) setSupporterId(initialAssignee);
+    if (!reviewerId && initialAssignee) setReviewerId(initialAssignee);
+  }, [initialAssignee, supporterId, reviewerId]);
 
   function chooseAssignee(nextId: string) {
     setAssigneeId(nextId);
-    if (supporterId === nextId) {
-      setSupporterId(members.find((member) => member.id !== nextId)?.id || "");
-    }
   }
 
   function chooseRandomReviewer() {
@@ -386,10 +382,6 @@ function TaskForm({
       setFormError("Hãy điền tên, hạn hoàn thành và chọn đủ ba vai trò.");
       return;
     }
-    if (new Set([assigneeId, supporterId, reviewerId]).size !== 3) {
-      setFormError("Ba vai trò cần được phân cho ba thành viên khác nhau.");
-      return;
-    }
     try {
       setFormError("");
       await onSave({
@@ -407,7 +399,7 @@ function TaskForm({
     }
   }
 
-  const memberName = (id: string) => members.find((member) => member.id === id)?.name || "";
+  const memberName = (id: string) => memberLabel(members.find((member) => member.id === id));
 
   return (
     <div
@@ -486,7 +478,7 @@ function TaskForm({
               <select value={assigneeId} onChange={(event) => chooseAssignee(event.target.value)}>
                 {members.map((member) => (
                   <option value={member.id} key={member.id}>
-                    {member.name}
+                    {memberLabel(member)}
                   </option>
                 ))}
               </select>
@@ -495,10 +487,9 @@ function TaskForm({
               Người hỗ trợ
               <select value={supporterId} onChange={(event) => setSupporterId(event.target.value)}>
                 {members
-                  .filter((member) => member.id !== assigneeId)
                   .map((member) => (
                     <option value={member.id} key={member.id}>
-                      {member.name}
+                      {memberLabel(member)}
                     </option>
                   ))}
               </select>
@@ -538,7 +529,7 @@ function TaskForm({
             <option value="">Chọn thành viên</option>
             {reviewerOptions.map((member) => (
               <option value={member.id} key={member.id}>
-                {member.name}
+                {memberLabel(member)}
               </option>
             ))}
           </select>
@@ -783,7 +774,7 @@ function TaskDetail({
                     <Avatar member={member} />
                     <div>
                       <small>{role.label}</small>
-                      <strong>{member?.name || "Chưa phân công"}</strong>
+                      <strong>{memberLabel(member) || "Chưa phân công"}</strong>
                     </div>
                   </div>
                 );
@@ -1056,6 +1047,7 @@ export default function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [workspaceName, setWorkspaceName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
+  const [memberName, setMemberName] = useState("");
   const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
   const [showMemberForm, setShowMemberForm] = useState(false);
   const currentUser = session?.user;
@@ -1283,10 +1275,11 @@ export default function App() {
     try {
       const team = await api<Member[]>(`/api/workspaces/${session.workspaceId}/members`, session, {
         method: "POST",
-        body: JSON.stringify({ email: memberEmail }),
+        body: JSON.stringify({ email: memberEmail, name: memberName }),
       });
       setMembers(team);
       setMemberEmail("");
+      setMemberName("");
       setShowMemberForm(false);
       setNotice("Đã thêm email vào workspace. Thành viên có thể đăng nhập bằng địa chỉ này.");
     } catch (error) {
@@ -1456,6 +1449,13 @@ export default function App() {
               placeholder="email@congty.com"
               required
             />
+            <input
+              aria-label="Tên hiển thị thành viên"
+              value={memberName}
+              onChange={(event) => setMemberName(event.target.value)}
+              placeholder="Tên hiển thị"
+              maxLength={80}
+            />
             <button type="submit" disabled={busy}>Thêm</button>
           </form>
         )}
@@ -1463,7 +1463,7 @@ export default function App() {
           {members.map((member) => (
             <div className="team-person" key={member.id}>
               <Avatar member={member} size="small" />
-              <span title={member.email}>{member.name}</span>
+              <span title={member.email}>{memberLabel(member)}</span>
               <i />
             </div>
           ))}
@@ -1564,17 +1564,10 @@ export default function App() {
           <button
             className="button primary create-button"
             onClick={() => setModalTask("new")}
-            disabled={members.length < 3}
-            title={members.length < 3 ? "Thêm thành viên để phân đủ ba vai trò." : undefined}
           >
             <span>＋</span>Tạo nhiệm vụ
           </button>
         </section>
-        {members.length < 3 && (
-          <p className="workspace-hint">
-            Thêm ít nhất {3 - members.length} thành viên bằng email để có thể phân công đủ ba vai trò.
-          </p>
-        )}
 
         <section className="stats-row" aria-label="Tổng quan tiến độ">
           <article className="stat-card">
@@ -1683,7 +1676,6 @@ export default function App() {
                     <button
                       aria-label={`Tạo nhiệm vụ ${status.label}`}
                       onClick={() => setModalTask("new")}
-                      disabled={members.length < 3}
                     >
                       ＋
                     </button>
@@ -1702,7 +1694,6 @@ export default function App() {
                       <button
                         className="empty-column"
                         onClick={() => setModalTask("new")}
-                        disabled={members.length < 3}
                       >
                         <span>＋</span> Thêm nhiệm vụ
                       </button>
@@ -1728,7 +1719,7 @@ export default function App() {
                 </span>
                 <strong>{task.title}</strong>
                 <span>{statuses.find((item) => item.key === task.status)?.label}</span>
-                <span>{members.find((member) => member.id === task.assigneeId)?.name}</span>
+                <span>{memberLabel(members.find((member) => member.id === task.assigneeId))}</span>
                 <span
                   className={
                     Date.parse(task.deadline) - Date.now() < 24 * 60 * 60 * 1_000 &&
