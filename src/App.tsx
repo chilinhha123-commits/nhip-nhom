@@ -45,6 +45,9 @@ type Task = {
   supporterId: string;
   reviewerId: string;
   deadline: string;
+  reminderAt?: string | null;
+  reminderHoursBefore?: number | null;
+  remindersSent?: string[];
   createdAt: string;
   documents: DocumentItem[];
   comments: CommentItem[];
@@ -114,7 +117,19 @@ async function api<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(url, { ...options, headers });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  let response: globalThis.Response;
+  try {
+    response = await fetch(url, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Máy chủ phản hồi chậm. Mọi thay đổi đã được lưu tạm; hãy đợi tải lại danh sách.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error || `Yêu cầu thất bại (${response.status}).`);
@@ -352,6 +367,17 @@ function TaskForm({
       ? dateInputValue(task.deadline)
       : dateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString()),
   );
+  const [reminderMode, setReminderMode] = useState<"hours" | "at">(
+    task?.reminderAt ? "at" : "hours",
+  );
+  const [reminderHoursBefore, setReminderHoursBefore] = useState(
+    task?.reminderHoursBefore ?? 24,
+  );
+  const [reminderAt, setReminderAt] = useState(
+    task?.reminderAt
+      ? dateInputValue(task.reminderAt)
+      : dateInputValue(new Date(Date.now() + 23 * 60 * 60 * 1_000).toISOString()),
+  );
   const [formError, setFormError] = useState("");
 
   const reviewerOptions = members;
@@ -367,7 +393,7 @@ function TaskForm({
 
   function chooseRandomReviewer() {
     if (!reviewerOptions.length) {
-      setFormError("Cần ít nhất ba thành viên để phân đủ các vai trò.");
+      setFormError("Cần ít nhất một thành viên để phân công nhiệm vụ.");
       return;
     }
     const choice = reviewerOptions[Math.floor(Math.random() * reviewerOptions.length)];
@@ -393,6 +419,8 @@ function TaskForm({
         supporterId,
         reviewerId,
         deadline: new Date(deadline).toISOString(),
+        reminderHoursBefore: reminderMode === "hours" ? reminderHoursBefore : null,
+        reminderAt: reminderMode === "at" ? new Date(reminderAt).toISOString() : null,
       });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Không lưu được nhiệm vụ.");
@@ -547,6 +575,42 @@ function TaskForm({
               onChange={(event) => setDeadline(event.target.value)}
             />
           </label>
+          <div className="form-grid">
+            <label>
+              Cách báo lại
+              <select
+                value={reminderMode}
+                onChange={(event) => setReminderMode(event.target.value as "hours" | "at")}
+              >
+                <option value="hours">Số giờ trước hạn</option>
+                <option value="at">Giờ báo lại cụ thể</option>
+              </select>
+            </label>
+            {reminderMode === "hours" ? (
+              <label>
+                Báo trước
+                <select
+                  value={reminderHoursBefore}
+                  onChange={(event) => setReminderHoursBefore(Number(event.target.value))}
+                >
+                  <option value={24}>24 giờ</option>
+                  <option value={12}>12 giờ</option>
+                  <option value={6}>6 giờ</option>
+                  <option value={1}>1 giờ</option>
+                  <option value={0}>Đúng giờ đến hạn</option>
+                </select>
+              </label>
+            ) : (
+              <label>
+                Giờ báo lại
+                <input
+                  type="datetime-local"
+                  value={reminderAt}
+                  onChange={(event) => setReminderAt(event.target.value)}
+                />
+              </label>
+            )}
+          </div>
           {formError && <p className="inline-error">{formError}</p>}
 
           <div className="dialog-actions">
@@ -757,6 +821,17 @@ function TaskDetail({
                 dateStyle: "long",
                 timeStyle: "short",
               })}
+            </strong>
+            <span>GIỜ BÁO LẠI</span>
+            <strong>
+              {task.reminderAt
+                ? new Date(task.reminderAt).toLocaleString("vi-VN", {
+                    dateStyle: "long",
+                    timeStyle: "short",
+                  })
+                : task.reminderHoursBefore != null
+                  ? `Trước hạn ${task.reminderHoursBefore === 0 ? "đúng giờ" : `${task.reminderHoursBefore} giờ`}`
+                  : "Mặc định 24 giờ trước hạn"}
             </strong>
           </div>
 
@@ -1202,30 +1277,57 @@ export default function App() {
   async function saveTask(draft: TaskDraft) {
     if (!session) throw new Error("Bạn cần đăng nhập để lưu nhiệm vụ.");
     setBusy(true);
-    try {
-      const editing = modalTask && modalTask !== "new";
-      const result = await api<{ task: Task; warnings: string[] }>(
-        editing ? `/api/tasks/${modalTask.id}` : "/api/tasks",
+    const editingTask = modalTask && modalTask !== "new" ? modalTask : null;
+    const optimisticId = editingTask?.id || `temp-task-${crypto.randomUUID()}`;
+    const optimisticTask: Task = editingTask
+      ? { ...editingTask, ...draft }
+      : {
+          ...draft,
+          id: optimisticId,
+          createdAt: new Date().toISOString(),
+          documents: [],
+          comments: [],
+          remindersSent: [],
+        };
+
+    setTasks((current) =>
+      editingTask
+        ? current.map((item) => (item.id === editingTask.id ? optimisticTask : item))
+        : [optimisticTask, ...current.filter((item) => item.id !== optimisticId)],
+    );
+    setModalTask(null);
+    setBusy(false);
+    setNotice("Đang lưu nhiệm vụ...");
+
+    void (async () => {
+      try {
+        const result = await api<{ task: Task; warnings: string[] }>(
+        editingTask ? `/api/tasks/${editingTask.id}` : "/api/tasks",
         session,
         {
-          method: editing ? "PUT" : "POST",
+          method: editingTask ? "PUT" : "POST",
           body: JSON.stringify(draft),
         },
-      );
-      setTasks((current) =>
-        editing
-          ? current.map((item) => (item.id === result.task.id ? result.task : item))
-          : [result.task, ...current],
-      );
-      setModalTask(null);
-      setNotice(
-        result.warnings?.length
-          ? result.warnings.join(" ")
-          : "Đã lưu nhiệm vụ thật gọn gàng!",
-      );
-    } finally {
-      setBusy(false);
-    }
+        );
+        setTasks((current) =>
+          editingTask
+            ? current.map((item) => (item.id === editingTask.id ? result.task : item))
+            : [result.task, ...current.filter((item) => item.id !== optimisticId)],
+        );
+        setNotice(
+          result.warnings?.length
+            ? result.warnings.join(" ")
+            : "Đã lưu nhiệm vụ thật gọn gàng!",
+        );
+      } catch (error) {
+        setTasks((current) =>
+          editingTask
+            ? current.map((item) => (item.id === editingTask.id ? editingTask : item))
+            : current.filter((item) => item.id !== optimisticId),
+        );
+        setNotice(error instanceof Error ? error.message : "Không lưu được nhiệm vụ.");
+      }
+    })();
   }
 
   async function changeStatus(taskId: string, status: Status) {

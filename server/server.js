@@ -296,6 +296,15 @@ function validateTask(input, workspace) {
   if (!statuses.includes(input.status)) return "Trạng thái nhiệm vụ không hợp lệ.";
   if (!priorities.includes(input.priority)) return "Mức ưu tiên không hợp lệ.";
   if (!Number.isFinite(Date.parse(input.deadline))) return "Vui lòng chọn thời hạn hợp lệ.";
+  if (input.reminderAt != null && !Number.isFinite(Date.parse(input.reminderAt))) {
+    return "Giờ báo lại không hợp lệ.";
+  }
+  if (input.reminderHoursBefore != null
+    && (!Number.isFinite(Number(input.reminderHoursBefore))
+      || Number(input.reminderHoursBefore) < 0
+      || Number(input.reminderHoursBefore) > 168)) {
+    return "Số giờ báo trước phải nằm trong khoảng 0 đến 168 giờ.";
+  }
   const memberIds = new Set(workspaceMembers(workspace).map((member) => member.id));
   if (!memberIds.has(input.assigneeId)) {
     return "Vui lòng chọn thành viên phụ trách có trong nhóm.";
@@ -351,6 +360,10 @@ app.post("/api/tasks", authenticate, requireWorkspace, async (req, res) => {
     supporterId: req.body.supporterId || req.body.assigneeId,
     reviewerId: req.body.reviewerId || req.body.assigneeId,
     deadline: new Date(req.body.deadline).toISOString(),
+    reminderAt: req.body.reminderAt ? new Date(req.body.reminderAt).toISOString() : null,
+    reminderHoursBefore: req.body.reminderAt == null && req.body.reminderHoursBefore != null
+      ? Number(req.body.reminderHoursBefore)
+      : null,
     createdAt: new Date().toISOString(),
     documents: [],
     comments: [],
@@ -358,9 +371,10 @@ app.post("/api/tasks", authenticate, requireWorkspace, async (req, res) => {
   };
   req.workspace.tasks.unshift(task);
   saveStore();
-  const warnings = await sendMail(`Được giao nhiệm vụ: ${task.title}`, taskMailText(task, req.workspace, "Bạn có một nhiệm vụ mới trong nhóm."), emailRecipients(task, req.workspace));
   io.to(`workspace:${req.workspace.id}`).emit("tasks:changed");
-  res.status(201).json({ task, warnings });
+  res.status(201).json({ task, warnings: [] });
+  void sendMail(`Được giao nhiệm vụ: ${task.title}`, taskMailText(task, req.workspace, "Bạn có một nhiệm vụ mới trong nhóm."), emailRecipients(task, req.workspace))
+    .catch((error) => console.error("Không gửi được email thông báo nhiệm vụ:", error));
 });
 
 app.put("/api/tasks/:id", authenticate, requireWorkspace, async (req, res) => {
@@ -373,6 +387,12 @@ app.put("/api/tasks/:id", authenticate, requireWorkspace, async (req, res) => {
     || existing.supporterId !== req.body.supporterId
     || existing.reviewerId !== req.body.reviewerId;
   const changedDeadline = Date.parse(existing.deadline) !== Date.parse(req.body.deadline);
+  const nextReminderAt = req.body.reminderAt ? new Date(req.body.reminderAt).toISOString() : null;
+  const nextReminderHours = req.body.reminderAt == null && req.body.reminderHoursBefore != null
+    ? Number(req.body.reminderHoursBefore)
+    : null;
+  const changedReminder = existing.reminderAt !== nextReminderAt
+    || existing.reminderHoursBefore !== nextReminderHours;
   req.workspace.tasks[index] = {
     ...existing,
     title: req.body.title.trim(),
@@ -383,14 +403,17 @@ app.put("/api/tasks/:id", authenticate, requireWorkspace, async (req, res) => {
     supporterId: req.body.supporterId || req.body.assigneeId,
     reviewerId: req.body.reviewerId || req.body.assigneeId,
     deadline: new Date(req.body.deadline).toISOString(),
-    remindersSent: changedAssignees || changedDeadline ? [] : existing.remindersSent,
+    reminderAt: nextReminderAt,
+    reminderHoursBefore: nextReminderHours,
+    remindersSent: changedAssignees || changedDeadline || changedReminder ? [] : existing.remindersSent,
   };
   saveStore();
-  const warnings = changedAssignees
-    ? await sendMail(`Cập nhật phân công: ${req.workspace.tasks[index].title}`, taskMailText(req.workspace.tasks[index], req.workspace, "Thông tin phân công nhiệm vụ đã được cập nhật."), emailRecipients(req.workspace.tasks[index], req.workspace))
-    : [];
   io.to(`workspace:${req.workspace.id}`).emit("tasks:changed");
-  res.json({ task: req.workspace.tasks[index], warnings });
+  res.json({ task: req.workspace.tasks[index], warnings: [] });
+  if (changedAssignees) {
+    void sendMail(`Cập nhật phân công: ${req.workspace.tasks[index].title}`, taskMailText(req.workspace.tasks[index], req.workspace, "Thông tin phân công nhiệm vụ đã được cập nhật."), emailRecipients(req.workspace.tasks[index], req.workspace))
+      .catch((error) => console.error("Không gửi được email cập nhật phân công:", error));
+  }
 });
 
 app.patch("/api/tasks/:id/status", authenticate, requireWorkspace, (req, res) => {
@@ -515,17 +538,35 @@ async function sendDueReminders() {
   for (const workspace of store.workspaces) {
     for (const task of workspace.tasks) {
       if (task.status === "DONE") continue;
-      const millisecondsRemaining = Date.parse(task.deadline) - now;
-      for (const [key, hours, label] of [["24h", 24, "còn 24 giờ"], ["1h", 1, "còn 1 giờ"]]) {
-        if (millisecondsRemaining > 0 && millisecondsRemaining <= hours * 60 * 60 * 1000 && !(task.remindersSent || []).includes(key)) {
-          const warnings = await sendMail(`Nhắc hạn (${label}): ${task.title}`, taskMailText(task, workspace, `Nhiệm vụ sắp đến hạn, ${label}.`), emailRecipients(task, workspace));
-          if (warnings.length) {
-            console.warn(`Nhắc hạn ${key} cho ${task.id} chưa gửi: ${warnings.join(" ")}`);
-          } else {
-            task.remindersSent = [...(task.remindersSent || []), key];
-            saveStore();
-          }
+      const deadlineTime = Date.parse(task.deadline);
+      if (!Number.isFinite(deadlineTime) || deadlineTime <= now) continue;
+      let schedules = [];
+
+      if (task.reminderAt) {
+        const reminderTime = Date.parse(task.reminderAt);
+        if (Number.isFinite(reminderTime)) {
+          schedules.push([`at:${task.reminderAt}`, reminderTime, `giờ báo lại ${new Date(reminderTime).toLocaleString("vi-VN")}`]);
         }
+      } else if (task.reminderHoursBefore != null) {
+        const hours = Number(task.reminderHoursBefore);
+        const reminderTime = deadlineTime - hours * 60 * 60 * 1000;
+        schedules.push([`hours:${hours}`, reminderTime, hours === 0 ? "đến hạn ngay bây giờ" : `còn ${hours} giờ`]);
+      } else {
+        schedules = [
+          ["24h", deadlineTime - 24 * 60 * 60 * 1000, "còn 24 giờ"],
+          ["1h", deadlineTime - 60 * 60 * 1000, "còn 1 giờ"],
+        ];
+      }
+
+      for (const [key, reminderTime, label] of schedules) {
+        if (now < reminderTime || (task.remindersSent || []).includes(key)) continue;
+        const warnings = await sendMail(`Nhắc hạn (${label}): ${task.title}`, taskMailText(task, workspace, `Nhiệm vụ sắp đến hạn, ${label}.`), emailRecipients(task, workspace));
+        if (warnings.length) {
+          console.warn(`Nhắc hạn ${key} cho ${task.id} chưa gửi: ${warnings.join(" ")}`);
+          continue;
+        }
+        task.remindersSent = [...(task.remindersSent || []), key];
+        saveStore();
       }
     }
   }
