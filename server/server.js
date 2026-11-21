@@ -20,7 +20,7 @@ const configuredMongoUri = process.env.MONGODB_URI?.trim() || "";
 const directMongoUri = process.env.MONGODB_DIRECT_URI?.trim() || "";
 const usesSrvMongoUri = configuredMongoUri.toLowerCase().startsWith("mongodb+srv://");
 const mongoUri = usesSrvMongoUri
-  ? directMongoUri
+  ? directMongoUri || configuredMongoUri
   : configuredMongoUri || directMongoUri;
 const mongoStoreId = "nhip-nhom-store";
 const port = Number(process.env.PORT || 4000);
@@ -74,36 +74,53 @@ let mongoCollection;
 let saveQueue = Promise.resolve();
 
 async function initializeStore() {
-  if (directMongoUri && !directMongoUri.toLowerCase().startsWith("mongodb://")) {
-    throw new Error("MONGODB_DIRECT_URI phải là URI mongodb:// dạng kết nối trực tiếp, không dùng mongodb+srv://.");
-  }
-  if (usesSrvMongoUri && !directMongoUri) {
-    throw new Error("MONGODB_URI dùng mongodb+srv://; hãy cấu hình MONGODB_DIRECT_URI để kết nối trực tiếp, tránh querySrv.");
-  }
   if (!mongoUri) {
     store = readStore();
     console.log("Đang sử dụng server/data/store.json (chưa cấu hình URI MongoDB).");
     return;
   }
 
-  mongoClient = new MongoClient(mongoUri);
-  await mongoClient.connect();
-  mongoCollection = mongoClient.db("nhip_nhom").collection("application_store");
-  const persisted = await mongoCollection.findOne({ _id: mongoStoreId });
-  if (persisted) {
-    if (!Array.isArray(persisted.users) || !Array.isArray(persisted.workspaces)) {
-      throw new Error("Dữ liệu store trong MongoDB không hợp lệ.");
+  try {
+    if (directMongoUri && !directMongoUri.toLowerCase().startsWith("mongodb://")) {
+      throw new Error("MONGODB_DIRECT_URI phải là URI mongodb:// dạng kết nối trực tiếp, không dùng mongodb+srv://.");
     }
-    store = { users: persisted.users, workspaces: persisted.workspaces };
-  } else {
-    store = fs.existsSync(databaseFile) ? readStore() : emptyStore();
-    await mongoCollection.replaceOne(
-      { _id: mongoStoreId },
-      { _id: mongoStoreId, users: store.users, workspaces: store.workspaces },
-      { upsert: true },
-    );
+    if (usesSrvMongoUri && !directMongoUri) {
+      throw new Error("MONGODB_URI dùng mongodb+srv://; hãy cấu hình MONGODB_DIRECT_URI để kết nối trực tiếp, tránh querySrv.");
+    }
+
+    mongoClient = new MongoClient(mongoUri);
+    await mongoClient.connect();
+    mongoCollection = mongoClient.db("nhip_nhom").collection("application_store");
+    const persisted = await mongoCollection.findOne({ _id: mongoStoreId });
+    if (persisted) {
+      if (!Array.isArray(persisted.users) || !Array.isArray(persisted.workspaces)) {
+        throw new Error("Dữ liệu store trong MongoDB không hợp lệ.");
+      }
+      store = { users: persisted.users, workspaces: persisted.workspaces };
+    } else {
+      store = fs.existsSync(databaseFile) ? readStore() : emptyStore();
+      await mongoCollection.replaceOne(
+        { _id: mongoStoreId },
+        { _id: mongoStoreId, users: store.users, workspaces: store.workspaces },
+        { upsert: true },
+      );
+    }
+    console.log("Đã kết nối MongoDB database nhip_nhom.");
+  } catch (error) {
+    const code = error?.code || error?.name || "UNKNOWN";
+    console.warn(`Kết nối/khởi tạo MongoDB thất bại (code=${code}):`, error);
+    mongoCollection = undefined;
+    if (mongoClient) {
+      try {
+        await mongoClient.close();
+      } catch (closeError) {
+        console.warn("Không đóng được MongoDB client sau lỗi khởi tạo:", closeError);
+      }
+      mongoClient = undefined;
+    }
+    store = readStore();
+    console.warn("Đang fallback sang server/data/store.json; kiểm tra lại MONGODB_URI và kết nối mạng.");
   }
-  console.log("Đã kết nối MongoDB database nhip_nhom.");
 }
 
 function saveStore() {
