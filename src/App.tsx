@@ -638,6 +638,7 @@ function TaskDetail({
   socket,
   onClose,
   onEdit,
+  onDelete,
   onDataChange,
   onNotice,
 }: {
@@ -647,6 +648,7 @@ function TaskDetail({
   socket: Socket | null;
   onClose: () => void;
   onEdit: () => void;
+  onDelete: (task: Task) => void;
   onDataChange: () => void;
   onNotice: (message: string) => void;
 }) {
@@ -801,6 +803,16 @@ function TaskDetail({
             <div className="drawer-header-actions">
               <button className="button secondary compact" onClick={onEdit}>
                 Chỉnh sửa
+              </button>
+              <button
+                className="button danger compact"
+                onClick={() => {
+                  if (window.confirm(`Bạn có chắc muốn xóa nhiệm vụ "${task.title}"?`)) {
+                    onDelete(task);
+                  }
+                }}
+              >
+                Xóa nhiệm vụ
               </button>
               <button className="close-button" onClick={onClose} aria-label="Đóng">
                 ×
@@ -1404,6 +1416,21 @@ export default function App() {
     }
   }
 
+  async function deleteTask(task: Task) {
+    if (!session) return;
+    setTasks((current) => current.filter((item) => item.id !== task.id));
+    setDetailTaskId(null);
+    try {
+      await api<void>(`/api/tasks/${task.id}`, session, { method: "DELETE" });
+      setNotice(`Đã xóa nhiệm vụ "${task.title}".`);
+    } catch (error) {
+      setTasks((current) => current.some((item) => item.id === task.id)
+        ? current
+        : [task, ...current]);
+      setNotice(error instanceof Error ? error.message : "Không xóa được nhiệm vụ.");
+    }
+  }
+
   async function createWorkspace(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
@@ -1925,6 +1952,7 @@ export default function App() {
             setModalTask(detailTask);
             setDetailTaskId(null);
           }}
+          onDelete={deleteTask}
           onDataChange={reload}
           onNotice={setNotice}
         />

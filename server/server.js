@@ -7,6 +7,7 @@ import cors from "cors";
 import express from "express";
 import multer from "multer";
 import nodemailer from "nodemailer";
+import { MongoClient } from "mongodb";
 import { OAuth2Client } from "google-auth-library";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
@@ -15,6 +16,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDirectory = path.join(__dirname, "data");
 const uploadDirectory = path.join(__dirname, "uploads");
 const databaseFile = path.join(dataDirectory, "store.json");
+const mongoUri = process.env.MONGODB_URI;
+const mongoStoreId = "nhip-nhom-store";
 const port = Number(process.env.PORT || 4000);
 const demoMode = process.env.DEMO_MODE !== "false";
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
@@ -60,16 +63,64 @@ function readStore() {
   }
 }
 
-let store = readStore();
+let store = emptyStore();
+let mongoClient;
+let mongoCollection;
+let saveQueue = Promise.resolve();
+
+async function initializeStore() {
+  if (!mongoUri) {
+    store = readStore();
+    console.log("Đang sử dụng server/data/store.json (MONGODB_URI chưa được cấu hình).");
+    return;
+  }
+
+  mongoClient = new MongoClient(mongoUri);
+  await mongoClient.connect();
+  mongoCollection = mongoClient.db("nhip_nhom").collection("application_store");
+  const persisted = await mongoCollection.findOne({ _id: mongoStoreId });
+  if (persisted) {
+    if (!Array.isArray(persisted.users) || !Array.isArray(persisted.workspaces)) {
+      throw new Error("Dữ liệu store trong MongoDB không hợp lệ.");
+    }
+    store = { users: persisted.users, workspaces: persisted.workspaces };
+  } else {
+    store = fs.existsSync(databaseFile) ? readStore() : emptyStore();
+    await mongoCollection.replaceOne(
+      { _id: mongoStoreId },
+      { _id: mongoStoreId, users: store.users, workspaces: store.workspaces },
+      { upsert: true },
+    );
+  }
+  console.log("Đã kết nối MongoDB database nhip_nhom.");
+}
+
 function saveStore() {
+  if (mongoCollection) {
+    const operation = saveQueue
+      .catch(() => {})
+      .then(() => mongoCollection.replaceOne(
+        { _id: mongoStoreId },
+        { _id: mongoStoreId, users: store.users, workspaces: store.workspaces },
+        { upsert: true },
+      ));
+    saveQueue = operation;
+    return operation;
+  }
+
   const contents = JSON.stringify(store, null, 2);
   if (process.platform === "win32") {
     fs.writeFileSync(databaseFile, contents);
-    return;
+    return Promise.resolve();
   }
   const temporaryFile = `${databaseFile}.tmp`;
   fs.writeFileSync(temporaryFile, contents);
   fs.renameSync(temporaryFile, databaseFile);
+  return Promise.resolve();
+}
+
+function asyncRoute(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
 function normalizeEmail(email) {
@@ -84,13 +135,13 @@ function userIdForEmail(email) {
   return `user-${crypto.createHash("sha256").update(normalizeEmail(email)).digest("hex").slice(0, 24)}`;
 }
 
-function userFromEmail(email, name) {
+async function userFromEmail(email, name) {
   const normalizedEmail = normalizeEmail(email);
   const found = store.users.find((user) => normalizeEmail(user.email) === normalizedEmail);
   if (found) {
-    if (typeof name === "string" && name.trim()) {
+    if (typeof name === "string" && name.trim() && found.name !== name.trim()) {
       found.name = name.trim();
-      saveStore();
+      await saveStore();
     }
     return found;
   }
@@ -101,7 +152,7 @@ function userFromEmail(email, name) {
     color: "#7357d9",
   };
   store.users.push(user);
-  saveStore();
+  await saveStore();
   return user;
 }
 
@@ -153,7 +204,7 @@ async function authenticate(req, res, next) {
       if (!payload?.email || payload.email_verified !== true || !payload.email.toLowerCase().endsWith("@gmail.com")) {
         return res.status(403).json({ error: "Vui lòng đăng nhập bằng địa chỉ Gmail đã xác minh." });
       }
-      req.user = userFromEmail(payload.email, payload.name);
+      req.user = await userFromEmail(payload.email, payload.name);
       return next();
     } catch (error) {
       console.error("Xác minh Google ID token thất bại:", error.message);
@@ -163,7 +214,11 @@ async function authenticate(req, res, next) {
 
   const demoEmail = req.headers["x-demo-email"];
   if (demoMode && isValidEmail(demoEmail)) {
-    req.user = userFromEmail(demoEmail);
+    try {
+      req.user = await userFromEmail(demoEmail);
+    } catch (error) {
+      return next(error);
+    }
     return next();
   }
   return res.status(401).json({ error: "Bạn cần đăng nhập bằng Google để tiếp tục." });
@@ -177,14 +232,14 @@ io.use(async (socket, next) => {
       const ticket = await oauthClient.verifyIdToken({ idToken: token, audience: googleClientId });
       const payload = ticket.getPayload();
       if (payload?.email && payload.email_verified && payload.email.toLowerCase().endsWith("@gmail.com")) {
-        user = userFromEmail(payload.email, payload.name);
+        user = await userFromEmail(payload.email, payload.name);
       }
     } catch (error) {
       return next(new Error("Phiên Google không hợp lệ."));
     }
   }
   if (!user && demoMode && isValidEmail(demoEmail)) {
-    user = userFromEmail(demoEmail);
+    user = await userFromEmail(demoEmail);
   }
   const workspace = user && workspaceForUser(workspaceId, user);
   if (!workspace) return next(new Error("Không có quyền truy cập workspace."));
@@ -221,19 +276,19 @@ app.post("/api/auth/google", async (req, res) => {
     if (!payload?.email || payload.email_verified !== true || !payload.email.toLowerCase().endsWith("@gmail.com")) {
       return res.status(403).json({ error: "Tài khoản phải là địa chỉ Gmail đã xác minh." });
     }
-    res.json({ token: credential, user: userFromEmail(payload.email, payload.name) });
+    res.json({ token: credential, user: await userFromEmail(payload.email, payload.name) });
   } catch (error) {
     console.error("Đăng nhập Google thất bại:", error.message);
     res.status(401).json({ error: "Không xác minh được tài khoản Google." });
   }
 });
 
-app.post("/api/auth/demo", (req, res) => {
+app.post("/api/auth/demo", asyncRoute(async (req, res) => {
   if (!demoMode) return res.status(403).json({ error: "Chế độ demo đang tắt." });
   const email = normalizeEmail(req.body?.email || "");
   if (!isValidEmail(email)) return res.status(400).json({ error: "Vui lòng nhập địa chỉ email hợp lệ." });
-  res.json({ user: userFromEmail(email) });
-});
+  res.json({ user: await userFromEmail(email) });
+}));
 
 app.get("/api/workspaces", authenticate, (req, res) => {
   res.json(store.workspaces
@@ -241,7 +296,7 @@ app.get("/api/workspaces", authenticate, (req, res) => {
     .map(workspaceSummary));
 });
 
-app.post("/api/workspaces", authenticate, (req, res) => {
+app.post("/api/workspaces", authenticate, asyncRoute(async (req, res) => {
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   if (!name) return res.status(400).json({ error: "Tên workspace không được để trống." });
   if (name.length > 80) return res.status(400).json({ error: "Tên workspace không được vượt quá 80 ký tự." });
@@ -253,9 +308,9 @@ app.post("/api/workspaces", authenticate, (req, res) => {
     tasks: [],
   };
   store.workspaces.push(workspace);
-  saveStore();
+  await saveStore();
   res.status(201).json(workspaceSummary(workspace));
-});
+}));
 
 app.get("/api/workspaces/:workspaceId/team", authenticate, (req, res) => {
   const workspace = workspaceForUser(req.params.workspaceId, req.user);
@@ -263,20 +318,20 @@ app.get("/api/workspaces/:workspaceId/team", authenticate, (req, res) => {
   res.json(workspaceMembers(workspace));
 });
 
-app.post("/api/workspaces/:workspaceId/members", authenticate, (req, res) => {
+app.post("/api/workspaces/:workspaceId/members", authenticate, asyncRoute(async (req, res) => {
   const workspace = workspaceForUser(req.params.workspaceId, req.user);
   if (!workspace) return res.status(404).json({ error: "Không tìm thấy workspace." });
   const email = normalizeEmail(req.body?.email || "");
   if (!isValidEmail(email)) return res.status(400).json({ error: "Vui lòng nhập địa chỉ email hợp lệ." });
   const displayName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  const member = userFromEmail(email, displayName);
+  const member = await userFromEmail(email, displayName);
   if (typeof displayName === "string" && displayName) member.name = displayName;
   if (!workspace.memberEmails.some((memberEmail) => normalizeEmail(memberEmail) === email)) {
     workspace.memberEmails.push(email);
-    saveStore();
+    await saveStore();
   }
   res.status(201).json(workspaceMembers(workspace));
-});
+}));
 
 function requireWorkspace(req, res, next) {
   const workspaceId = req.headers["x-workspace-id"];
@@ -425,7 +480,7 @@ function taskMailText(task, workspace, prefix) {
   return `${prefix}\n\nNhiệm vụ: ${task.title}\nHạn hoàn thành: ${formattedDeadline}\nPhụ trách: ${memberNames([task.assigneeId])}\nHỗ trợ: ${memberNames([task.supporterId])}\nKiểm tra chéo: ${memberNames([task.reviewerId])}\n\nMở ứng dụng Nhịp Nhóm để xem chi tiết.`;
 }
 
-app.post("/api/tasks", authenticate, requireWorkspace, async (req, res) => {
+app.post("/api/tasks", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
   const validationError = validateTask(req.body, req.workspace);
   if (validationError) return res.status(400).json({ error: validationError });
   const task = {
@@ -448,14 +503,14 @@ app.post("/api/tasks", authenticate, requireWorkspace, async (req, res) => {
     remindersSent: [],
   };
   req.workspace.tasks.unshift(task);
-  saveStore();
+  await saveStore();
   io.to(`workspace:${req.workspace.id}`).emit("tasks:changed");
   res.status(201).json({ task, warnings: [] });
   void sendMail(`Được giao nhiệm vụ: ${task.title}`, taskMailText(task, req.workspace, "Bạn có một nhiệm vụ mới trong nhóm."), emailRecipients(task, req.workspace))
     .catch((error) => console.error("Không gửi được email thông báo nhiệm vụ:", error));
-});
+}));
 
-app.put("/api/tasks/:id", authenticate, requireWorkspace, async (req, res) => {
+app.put("/api/tasks/:id", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
   const validationError = validateTask(req.body, req.workspace);
   if (validationError) return res.status(400).json({ error: validationError });
   const index = req.workspace.tasks.findIndex((task) => task.id === req.params.id);
@@ -485,28 +540,28 @@ app.put("/api/tasks/:id", authenticate, requireWorkspace, async (req, res) => {
     reminderHoursBefore: nextReminderHours,
     remindersSent: changedAssignees || changedDeadline || changedReminder ? [] : existing.remindersSent,
   };
-  saveStore();
+  await saveStore();
   io.to(`workspace:${req.workspace.id}`).emit("tasks:changed");
   res.json({ task: req.workspace.tasks[index], warnings: [] });
   if (changedAssignees) {
     void sendMail(`Cập nhật phân công: ${req.workspace.tasks[index].title}`, taskMailText(req.workspace.tasks[index], req.workspace, "Thông tin phân công nhiệm vụ đã được cập nhật."), emailRecipients(req.workspace.tasks[index], req.workspace))
       .catch((error) => console.error("Không gửi được email cập nhật phân công:", error));
   }
-});
+}));
 
-app.patch("/api/tasks/:id/status", authenticate, requireWorkspace, (req, res) => {
+app.patch("/api/tasks/:id/status", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
   if (!["TODO", "IN_PROGRESS", "REVIEW", "DONE"].includes(req.body.status)) {
     return res.status(400).json({ error: "Trạng thái nhiệm vụ không hợp lệ." });
   }
   const task = taskInWorkspace(req.workspace, req.params.id);
   if (!task) return res.status(404).json({ error: "Không tìm thấy nhiệm vụ." });
   task.status = req.body.status;
-  saveStore();
+  await saveStore();
   io.to(`workspace:${req.workspace.id}`).emit("tasks:changed");
   res.json(task);
-});
+}));
 
-app.post("/api/tasks/:id/comments", authenticate, requireWorkspace, (req, res) => {
+app.post("/api/tasks/:id/comments", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
   const task = taskInWorkspace(req.workspace, req.params.id);
   if (!task) return res.status(404).json({ error: "Không tìm thấy nhiệm vụ." });
   if (typeof req.body.text !== "string" || !req.body.text.trim()) return res.status(400).json({ error: "Nội dung bình luận không được để trống." });
@@ -519,12 +574,12 @@ app.post("/api/tasks/:id/comments", authenticate, requireWorkspace, (req, res) =
     createdAt: new Date().toISOString(),
   };
   task.comments.push(comment);
-  saveStore();
+  await saveStore();
   io.to(`task:${task.id}`).emit("comment:new", { taskId: task.id, comment });
   res.status(201).json(comment);
-});
+}));
 
-app.post("/api/tasks/:id/documents", authenticate, requireWorkspace, (req, res) => {
+app.post("/api/tasks/:id/documents", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
   const task = taskInWorkspace(req.workspace, req.params.id);
   if (!task) return res.status(404).json({ error: "Không tìm thấy nhiệm vụ." });
   const url = typeof req.body.url === "string" ? req.body.url.trim() : "";
@@ -539,9 +594,9 @@ app.post("/api/tasks/:id/documents", authenticate, requireWorkspace, (req, res) 
   if (!name) return res.status(400).json({ error: "Tên tài liệu không được để trống." });
   const document = { id: `doc-${crypto.randomUUID()}`, name, url: parsedUrl.toString(), createdAt: new Date().toISOString() };
   task.documents.push(document);
-  saveStore();
+  await saveStore();
   res.status(201).json(document);
-});
+}));
 
 const storage = multer.diskStorage({
   destination: uploadDirectory,
@@ -549,7 +604,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 15 * 1024 * 1024 } });
 
-app.post("/api/tasks/:id/documents/upload", authenticate, requireWorkspace, upload.single("file"), (req, res) => {
+app.post("/api/tasks/:id/documents/upload", authenticate, requireWorkspace, upload.single("file"), asyncRoute(async (req, res) => {
   const task = taskInWorkspace(req.workspace, req.params.id);
   if (!task) {
     if (req.file) fs.unlinkSync(req.file.path);
@@ -565,11 +620,11 @@ app.post("/api/tasks/:id/documents/upload", authenticate, requireWorkspace, uplo
     createdAt: new Date().toISOString(),
   };
   task.documents.push(document);
-  saveStore();
+  await saveStore();
   res.status(201).json(document);
-});
+}));
 
-app.delete("/api/tasks/:id/documents/:documentId", authenticate, requireWorkspace, (req, res) => {
+app.delete("/api/tasks/:id/documents/:documentId", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
   const task = taskInWorkspace(req.workspace, req.params.id);
   if (!task) return res.status(404).json({ error: "Không tìm thấy nhiệm vụ." });
   const document = task.documents.find((item) => item.id === req.params.documentId);
@@ -579,9 +634,34 @@ app.delete("/api/tasks/:id/documents/:documentId", authenticate, requireWorkspac
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
   task.documents = task.documents.filter((item) => item.id !== document.id);
-  saveStore();
+  await saveStore();
   res.status(204).end();
-});
+}));
+
+app.delete("/api/tasks/:id", authenticate, requireWorkspace, asyncRoute(async (req, res) => {
+  const taskIndex = req.workspace.tasks.findIndex((task) => task.id === req.params.id);
+  if (taskIndex < 0) return res.status(404).json({ error: "Không tìm thấy nhiệm vụ." });
+
+  const [task] = req.workspace.tasks.splice(taskIndex, 1);
+  try {
+    await saveStore();
+  } catch (error) {
+    req.workspace.tasks.splice(taskIndex, 0, task);
+    throw error;
+  }
+  for (const document of task.documents || []) {
+    if (!document.storageName) continue;
+    const filePath = path.join(uploadDirectory, path.basename(document.storageName));
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (error) {
+      console.error(`Không thể xóa tệp đính kèm ${document.storageName} của nhiệm vụ ${task.id}:`, error);
+    }
+  }
+  io.to(`workspace:${req.workspace.id}`).emit("tasks:changed");
+  io.to(`task:${task.id}`).emit("task:deleted", { taskId: task.id });
+  res.status(204).end();
+}));
 
 app.get("/api/tasks/:id/documents/:documentId/file", authenticate, requireWorkspace, (req, res) => {
   const task = taskInWorkspace(req.workspace, req.params.id);
@@ -648,21 +728,30 @@ async function sendDueReminders() {
           continue;
         }
         task.remindersSent = [...(task.remindersSent || []), key];
-        saveStore();
+        await saveStore();
       }
     }
   }
 }
 
-setInterval(() => {
-  sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn thất bại:", error));
-}, 60_000).unref();
-sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn khởi động thất bại:", error));
+async function startServer() {
+  await initializeStore();
+  setInterval(() => {
+    sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn thất bại:", error));
+  }, 60_000).unref();
+  sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn khởi động thất bại:", error));
 
-httpServer.listen(port, () => {
-  console.log(`API Nhịp Nhóm đang chạy tại http://localhost:${port}`);
-  if (!googleClientId) console.warn("Chưa cấu hình GOOGLE_CLIENT_ID: ứng dụng chỉ dùng chế độ demo.");
-  if (!process.env.BREVO_API_KEY && (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD)) {
-    console.warn("Chưa cấu hình BREVO_API_KEY hoặc Gmail App Password: email thông báo chưa được gửi.");
-  }
+  httpServer.listen(port, () => {
+    console.log(`API Nhịp Nhóm đang chạy tại http://localhost:${port}`);
+    if (!googleClientId) console.warn("Chưa cấu hình GOOGLE_CLIENT_ID: ứng dụng chỉ dùng chế độ demo.");
+    if (!process.env.BREVO_API_KEY && (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD)) {
+      console.warn("Chưa cấu hình BREVO_API_KEY hoặc Gmail App Password: email thông báo chưa được gửi.");
+    }
+  });
+}
+
+startServer().catch(async (error) => {
+  console.error("Không thể khởi động máy chủ hoặc kết nối kho dữ liệu:", error);
+  if (mongoClient) await mongoClient.close();
+  process.exitCode = 1;
 });

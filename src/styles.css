@@ -653,6 +653,19 @@ textarea:focus-visible {
   background: #f6fbff;
 }
 
+.button.danger {
+  padding: 9px 13px;
+  border: 1px solid #f1c5c5;
+  color: #b74747;
+  background: #fff7f7;
+  font-size: 11px;
+}
+
+.button.danger:hover:not(:disabled) {
+  border-color: #e7a5a5;
+  background: #ffeded;
+}
+
 .button.compact {
   padding: 7px 10px;
   font-size: 10px;
