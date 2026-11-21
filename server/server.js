@@ -16,7 +16,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDirectory = path.join(__dirname, "data");
 const uploadDirectory = path.join(__dirname, "uploads");
 const databaseFile = path.join(dataDirectory, "store.json");
-const mongoUri = process.env.MONGODB_URI;
+const configuredMongoUri = process.env.MONGODB_URI?.trim() || "";
+const directMongoUri = process.env.MONGODB_DIRECT_URI?.trim() || "";
+const usesSrvMongoUri = configuredMongoUri.toLowerCase().startsWith("mongodb+srv://");
+const mongoUri = usesSrvMongoUri
+  ? directMongoUri
+  : configuredMongoUri || directMongoUri;
 const mongoStoreId = "nhip-nhom-store";
 const port = Number(process.env.PORT || 4000);
 const demoMode = process.env.DEMO_MODE !== "false";
@@ -69,9 +74,15 @@ let mongoCollection;
 let saveQueue = Promise.resolve();
 
 async function initializeStore() {
+  if (directMongoUri && !directMongoUri.toLowerCase().startsWith("mongodb://")) {
+    throw new Error("MONGODB_DIRECT_URI phải là URI mongodb:// dạng kết nối trực tiếp, không dùng mongodb+srv://.");
+  }
+  if (usesSrvMongoUri && !directMongoUri) {
+    throw new Error("MONGODB_URI dùng mongodb+srv://; hãy cấu hình MONGODB_DIRECT_URI để kết nối trực tiếp, tránh querySrv.");
+  }
   if (!mongoUri) {
     store = readStore();
-    console.log("Đang sử dụng server/data/store.json (MONGODB_URI chưa được cấu hình).");
+    console.log("Đang sử dụng server/data/store.json (chưa cấu hình URI MongoDB).");
     return;
   }
 
