@@ -62,16 +62,21 @@ Không đưa `.env` lên GitHub hoặc chia sẻ Client Secret/credential. Ứng
 
 ## 4. Bật email phân công và nhắc hạn
 
-1. Trong tài khoản Gmail, bật **Xác minh 2 bước** tại phần bảo mật tài khoản Google.
-2. Mở [Google App Passwords](https://myaccount.google.com/apppasswords). Tạo App Password cho ứng dụng này (Google có thể yêu cầu đăng nhập/xác minh lại). Sao chép mật khẩu 16 ký tự; không dùng mật khẩu đăng nhập Gmail thông thường.
-3. Điền `.env`:
+1. Tạo API key trong tài khoản Brevo và xác minh địa chỉ người gửi `chilinhha123@gmail.com` tại Brevo.
+2. Điền `.env`:
+
+   ```dotenv
+   BREVO_API_KEY=your-brevo-api-key
+   ```
+
+3. Nếu không cấu hình Brevo, ứng dụng dùng SMTP Gmail dự phòng:
 
    ```dotenv
    GMAIL_USER=dia-chi-gmail-cua-ban@gmail.com
    GMAIL_APP_PASSWORD=mat-khau-ung-dung-16-ky-tu
    ```
 
-4. Khởi động lại `npm run dev`. Khi tạo nhiệm vụ, ứng dụng gửi email tới ba địa chỉ được phân công; máy chủ kiểm tra mỗi phút để gửi nhắc hạn trước 24 giờ và trước 1 giờ. Nhiệm vụ đã hoàn thành sẽ không nhận nhắc hạn.
+4. Khởi động lại `npm run dev`. Khi tạo nhiệm vụ, ứng dụng gửi email riêng tới các địa chỉ hợp lệ trong ba vai trò được phân công; máy chủ kiểm tra mỗi phút để gửi nhắc hạn. Nhiệm vụ đã hoàn thành sẽ không nhận nhắc hạn.
 5. Để kiểm tra email thật, dùng địa chỉ Gmail của các thành viên đã thêm vào workspace.
 
 Thêm thành viên bằng email sẽ lưu địa chỉ đó vào workspace. Thành viên cần đăng nhập bằng đúng email đã thêm để thấy workspace; lời mời hiện chưa gửi email riêng.
@@ -84,8 +89,9 @@ Trong Render Dashboard, mở **Web Service → Environment** rồi thêm các bi
 
 | Biến | Giá trị |
 |---|---|
-| `GMAIL_USER` | Gmail dùng để gửi, ví dụ `ten-cua-ban@gmail.com` |
-| `GMAIL_APP_PASSWORD` | Mật khẩu ứng dụng 16 ký tự của Gmail |
+| `BREVO_API_KEY` | Brevo API key; ưu tiên sử dụng khi có cấu hình |
+| `GMAIL_USER` | Gmail dùng gửi email dự phòng, ví dụ `ten-cua-ban@gmail.com` |
+| `GMAIL_APP_PASSWORD` | App Password Gmail dùng làm SMTP dự phòng |
 
 Sau khi thêm biến, nhấn **Save Changes** để Render triển khai lại dịch vụ. Các biến tùy chọn khác vẫn có thể cấu hình như `GOOGLE_CLIENT_ID`, `DEMO_MODE`, `CLIENT_ORIGIN` và `PORT`. Máy chủ kiểm tra hạn nhiệm vụ khi khởi động và sau đó mỗi phút; khi còn dưới 24 giờ, nó gửi nhắc hạn tới Gmail của các thành viên được phân công và lưu `remindersSent` trong `store.json` để không gửi trùng.
 
@@ -110,7 +116,9 @@ Các biến môi trường có trong `.env.example`:
 | `CLIENT_ORIGIN` | `http://localhost:5173` | Origin được phép kết nối khi phát triển |
 | `DEMO_MODE` | `true` | Cho phép đăng nhập thử bằng email mà không xác minh Google; tắt để yêu cầu đăng nhập Google |
 | `GOOGLE_CLIENT_ID` | *(trống)* | Google OAuth Client ID |
-| `GMAIL_USER` | *(trống)* | Gmail gửi email |
-| `GMAIL_APP_PASSWORD` | *(trống)* | App Password của Gmail |
+| `BREVO_API_KEY` | *(trống)* | Brevo HTTP API key gửi email; ưu tiên hơn SMTP |
+| `GMAIL_USER` | *(trống)* | Gmail gửi email dự phòng |
+| `GMAIL_APP_PASSWORD` | *(trống)* | App Password Gmail dùng SMTP dự phòng |
+| `SMTP_PORT` | `587` | Cổng Gmail SMTP; dùng `465` để bật SMTPS hoặc `587` để dùng STARTTLS |
 
 Dữ liệu workspace lưu trên máy, không có cơ sở dữ liệu cloud hay đồng bộ giữa nhiều máy chủ. Chế độ demo không xác minh danh tính email, chỉ nên dùng để thử nghiệm cục bộ. Khi triển khai công khai cho nhiều người dùng, cần thay kho JSON bằng cơ sở dữ liệu phù hợp, cấu hình HTTPS, sao lưu và bảo vệ tệp `.env`/thư mục uploads.

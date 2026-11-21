@@ -206,7 +206,8 @@ app.get("/api/config", (req, res) => {
   res.json({
     googleClientId,
     demoMode,
-    emailConfigured: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
+    emailConfigured: Boolean(process.env.BREVO_API_KEY
+      || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)),
   });
 });
 
@@ -318,51 +319,95 @@ function validateTask(input, workspace) {
 }
 
 function emailRecipients(task, workspace) {
-  return [...new Set([task.assigneeId, task.supporterId, task.reviewerId])]
+  return [...new Set([task.assigneeId, task.supporterId, task.reviewerId]
     .map((id) => workspaceMembers(workspace).find((member) => member.id === id)?.email)
-    .filter(Boolean);
+    .filter((email) => typeof email === "string" && isValidEmail(email))
+    .map((email) => normalizeEmail(email)))];
 }
 
 async function sendMail(subject, text, recipients) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-    console.error(`SMTP: chưa gửi "${subject}" vì thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD.`);
-    return ["Email chưa được gửi: hãy cấu hình GMAIL_USER và GMAIL_APP_PASSWORD trong .env."];
+  const normalizedRecipients = [...new Set(recipients
+    .filter((email) => typeof email === "string" && isValidEmail(email))
+    .map((email) => normalizeEmail(email)))];
+  if (normalizedRecipients.length === 0) {
+    console.warn(`Email: không có người nhận hợp lệ cho "${subject}".`);
+    return ["Không gửi được email: nhiệm vụ không có địa chỉ người nhận hợp lệ."];
   }
-  const smtpPort = Number(process.env.SMTP_PORT || "587");
-  const secure = smtpPort === 465;
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: smtpPort,
-    secure,
-    requireTLS: !secure,
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000,
-  });
 
   let failures = 0;
-  for (const to of new Set(recipients.filter(Boolean))) {
-    try {
-      await transporter.sendMail({
-        from: `"Nhịp Nhóm" <${process.env.GMAIL_USER}>`,
-        to,
-        subject,
-        text,
-      });
-      console.log(`SMTP: đã gửi thành công "${subject}" tới ${to}.`);
-    } catch (error) {
-      failures += 1;
-      const code = error?.code || "UNKNOWN";
-      const command = error?.command ? `, command=${error.command}` : "";
-      console.error(`SMTP: gửi email "${subject}" tới ${to} thất bại (code=${code}${command})`, error);
+  if (process.env.BREVO_API_KEY) {
+    const htmlContent = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+      .replace(/\r?\n/g, "<br>");
+    for (const recipientEmail of normalizedRecipients) {
+      try {
+        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": process.env.BREVO_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sender: { name: "Nhịp Nhóm", email: "chilinhha123@gmail.com" },
+            to: [{ email: recipientEmail }],
+            subject,
+            htmlContent,
+          }),
+        });
+        if (!response.ok) {
+          const details = await response.text();
+          failures += 1;
+          console.error(`Brevo: gửi "${subject}" tới ${recipientEmail} thất bại (HTTP ${response.status}): ${details}`);
+          continue;
+        }
+        console.log(`Brevo: gửi thành công "${subject}" tới ${recipientEmail}.`);
+      } catch (error) {
+        failures += 1;
+        console.error(`Brevo: gửi "${subject}" tới ${recipientEmail} gặp lỗi:`, error);
+      }
+    }
+  } else {
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      console.error(`SMTP fallback: chưa gửi "${subject}" vì thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD.`);
+      return ["Email chưa được gửi: hãy cấu hình BREVO_API_KEY hoặc Gmail App Password."];
+    }
+    const smtpPort = Number(process.env.SMTP_PORT || "587");
+    const secure = smtpPort === 465;
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: smtpPort,
+      secure,
+      requireTLS: !secure,
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
+    });
+
+    for (const recipientEmail of normalizedRecipients) {
+      try {
+        await transporter.sendMail({
+          from: `"Nhịp Nhóm" <${process.env.GMAIL_USER}>`,
+          to: recipientEmail,
+          subject,
+          text,
+        });
+        console.log(`SMTP fallback: gửi thành công "${subject}" tới ${recipientEmail}.`);
+      } catch (error) {
+        failures += 1;
+        const code = error?.code || "UNKNOWN";
+        const command = error?.command ? `, command=${error.command}` : "";
+        console.error(`SMTP fallback: gửi "${subject}" tới ${recipientEmail} thất bại (code=${code}${command})`, error);
+      }
     }
   }
-  if (recipients.length === 0) {
-    console.warn(`SMTP: không có người nhận hợp lệ cho email "${subject}".`);
-  }
+
   return failures
-    ? [`Không gửi được email tới ${failures} thành viên; kiểm tra cấu hình Gmail và log SMTP.`]
+    ? [`Không gửi được email tới ${failures} thành viên; xem log dịch vụ email.`]
     : [];
 }
 
@@ -608,5 +653,7 @@ sendDueReminders().catch((error) => console.error("Kiểm tra email nhắc hạn
 httpServer.listen(port, () => {
   console.log(`API Nhịp Nhóm đang chạy tại http://localhost:${port}`);
   if (!googleClientId) console.warn("Chưa cấu hình GOOGLE_CLIENT_ID: ứng dụng chỉ dùng chế độ demo.");
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) console.warn("Chưa cấu hình Gmail App Password: email thông báo chưa được gửi.");
+  if (!process.env.BREVO_API_KEY && (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD)) {
+    console.warn("Chưa cấu hình BREVO_API_KEY hoặc Gmail App Password: email thông báo chưa được gửi.");
+  }
 });

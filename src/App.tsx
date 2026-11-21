@@ -1696,7 +1696,7 @@ export default function App() {
         )}
         {!config.emailConfigured && (
           <div className="subtle-warning">
-            ✉ Email nhắc hạn chưa bật · thêm Gmail App Password trong file .env
+            ✉ Email nhắc hạn chưa bật · thêm BREVO_API_KEY hoặc Gmail App Password
           </div>
         )}
         {loadError && (
