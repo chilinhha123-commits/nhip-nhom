@@ -408,6 +408,10 @@ function TaskForm({
       setFormError("Hãy điền tên, hạn hoàn thành và chọn đủ ba vai trò.");
       return;
     }
+    if (reminderMode === "at" && !Number.isFinite(Date.parse(reminderAt))) {
+      setFormError("Vui lòng chọn giờ báo lại hợp lệ.");
+      return;
+    }
     try {
       setFormError("");
       await onSave({
@@ -1120,6 +1124,7 @@ export default function App() {
   const [view, setView] = useState<"board" | "list">("board");
   const [menuOpen, setMenuOpen] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const browserReminderKeys = useRef(new Set<string>());
   const [workspaceName, setWorkspaceName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberName, setMemberName] = useState("");
@@ -1198,6 +1203,60 @@ export default function App() {
     const timer = window.setTimeout(() => setNotice(""), 3_800);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!tasks.length) return;
+
+    const checkBrowserReminders = () => {
+      const now = Date.now();
+      for (const task of tasks) {
+        if (task.status === "DONE") continue;
+
+        let reminderTime: number;
+        if (task.reminderAt) {
+          reminderTime = Date.parse(task.reminderAt);
+        } else if (task.reminderHoursBefore != null) {
+          const deadlineTime = Date.parse(task.deadline);
+          reminderTime = deadlineTime - Number(task.reminderHoursBefore) * 60 * 60 * 1000;
+        } else {
+          reminderTime = Date.parse(task.deadline) - 24 * 60 * 60 * 1000;
+        }
+
+        if (!Number.isFinite(reminderTime)) continue;
+        const elapsed = now - reminderTime;
+        if (elapsed < 0 || elapsed > 30 * 60 * 1000) continue;
+
+        const key = `${task.id}:${reminderTime}`;
+        if (browserReminderKeys.current.has(key)) continue;
+        browserReminderKeys.current.add(key);
+        setNotice(`⏰ Đến giờ báo lại: "${task.title}"`);
+
+        try {
+          const AudioContextClass = window.AudioContext
+            || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (!AudioContextClass) continue;
+          const context = new AudioContextClass();
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = 660;
+          gain.gain.setValueAtTime(0.035, context.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.16);
+          oscillator.connect(gain);
+          gain.connect(context.destination);
+          oscillator.start();
+          oscillator.stop(context.currentTime + 0.16);
+          oscillator.onended = () => void context.close();
+        } catch {
+          // Trình duyệt có thể chặn âm thanh tự động; toast vẫn hiển thị bình thường.
+        }
+      }
+    };
+
+    checkBrowserReminders();
+    const timer = window.setInterval(checkBrowserReminders, 30_000);
+    return () => window.clearInterval(timer);
+  }, [tasks]);
 
   const filteredTasks = useMemo(
     () =>

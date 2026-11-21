@@ -89,6 +89,8 @@ Trong Render Dashboard, mở **Web Service → Environment** rồi thêm các bi
 
 Sau khi thêm biến, nhấn **Save Changes** để Render triển khai lại dịch vụ. Các biến tùy chọn khác vẫn có thể cấu hình như `GOOGLE_CLIENT_ID`, `DEMO_MODE`, `CLIENT_ORIGIN` và `PORT`. Máy chủ kiểm tra hạn nhiệm vụ khi khởi động và sau đó mỗi phút; khi còn dưới 24 giờ, nó gửi nhắc hạn tới Gmail của các thành viên được phân công và lưu `remindersSent` trong `store.json` để không gửi trùng.
 
+Nếu chọn **Giờ báo lại cụ thể**, giao diện trình duyệt tự chuyển giờ địa phương thành ISO UTC trước khi gửi lên server, nên Render so sánh đúng thời điểm thực tế. Máy chủ quét mỗi phút và chỉ gửi trong vòng 30 phút kể từ giờ đã đặt. Nhật ký Logs ghi rõ lý do, thời điểm định gửi và chi tiết lỗi SMTP nếu Gmail từ chối email.
+
 ## 5. Các chức năng hiện có
 
 - Bảng Kanban và danh sách, lọc trạng thái/ưu tiên, tìm kiếm và thống kê.

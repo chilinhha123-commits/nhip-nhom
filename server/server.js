@@ -325,6 +325,7 @@ function emailRecipients(task, workspace) {
 
 async function sendMail(subject, text, recipients) {
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    console.error(`SMTP: chưa gửi "${subject}" vì thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD.`);
     return ["Email chưa được gửi: hãy cấu hình GMAIL_USER và GMAIL_APP_PASSWORD trong .env."];
   }
   const transporter = nodemailer.createTransport({
@@ -338,7 +339,12 @@ async function sendMail(subject, text, recipients) {
     text,
   })));
   const failures = results.filter((result) => result.status === "rejected");
-  failures.forEach((result) => console.error("Không gửi được email:", result.reason));
+  failures.forEach((result) => console.error(`SMTP: gửi email "${subject}" thất bại:`, result.reason));
+  if (recipients.length === 0) {
+    console.warn(`SMTP: không có người nhận hợp lệ cho email "${subject}".`);
+  } else if (failures.length === 0) {
+    console.log(`SMTP: đã gửi thành công "${subject}" tới ${recipients.join(", ")}.`);
+  }
   return failures.length ? [`Không gửi được email tới ${failures.length} thành viên; kiểm tra cấu hình Gmail.`] : [];
 }
 
@@ -539,7 +545,7 @@ async function sendDueReminders() {
     for (const task of workspace.tasks) {
       if (task.status === "DONE") continue;
       const deadlineTime = Date.parse(task.deadline);
-      if (!Number.isFinite(deadlineTime) || deadlineTime <= now) continue;
+      if (!Number.isFinite(deadlineTime)) continue;
       let schedules = [];
 
       if (task.reminderAt) {
@@ -559,7 +565,11 @@ async function sendDueReminders() {
       }
 
       for (const [key, reminderTime, label] of schedules) {
-        if (now < reminderTime || (task.remindersSent || []).includes(key)) continue;
+        const elapsedMilliseconds = now - reminderTime;
+        if (elapsedMilliseconds < 0
+          || elapsedMilliseconds > 30 * 60 * 1000
+          || (task.remindersSent || []).includes(key)) continue;
+        console.log(`Nhắc hạn: "${task.title}" (${task.id}) do ${label}; thời gian đã định ${new Date(reminderTime).toISOString()}, hiện tại ${new Date(now).toISOString()}.`);
         const warnings = await sendMail(`Nhắc hạn (${label}): ${task.title}`, taskMailText(task, workspace, `Nhiệm vụ sắp đến hạn, ${label}.`), emailRecipients(task, workspace));
         if (warnings.length) {
           console.warn(`Nhắc hạn ${key} cho ${task.id} chưa gửi: ${warnings.join(" ")}`);
