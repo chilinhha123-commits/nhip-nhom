@@ -124,6 +124,7 @@ Nếu chọn **Giờ báo lại cụ thể**, giao diện trình duyệt tự ch
 - Đồng hồ đếm ngược từng giây, cảnh báo màu đỏ khi còn dưới 24 giờ hoặc quá hạn.
 - Email thông báo khi giao nhiệm vụ và email nhắc hạn 24 giờ/1 giờ nếu đã cấu hình Gmail.
 - Chi tiết nhiệm vụ có liên kết/tệp đính kèm (tối đa 15 MB), bình luận lưu bền và cập nhật trực tiếp qua Socket.IO.
+- Thành viên có thể gửi lời nhắc nhóm; thông báo được lưu theo workspace và đẩy realtime tới các thành viên đang kết nối.
 
 ## 8. Cấu hình và lưu trữ
 

@@ -629,6 +629,35 @@ app.put("/api/workspaces/:workspaceId/members/:memberId/profile", authenticate, 
   res.json(workspaceMembers(workspace));
 }));
 
+app.get("/api/workspaces/:workspaceId/notifications", authenticate, (req, res) => {
+  const workspace = workspaceForUser(req.params.workspaceId, req.user);
+  if (!workspace) return res.status(404).json({ error: "Không tìm thấy workspace." });
+  res.json(Array.isArray(workspace.notifications) ? workspace.notifications.slice(0, 100) : []);
+});
+
+app.post("/api/workspaces/:workspaceId/notifications", authenticate, asyncRoute(async (req, res) => {
+  const workspace = workspaceForUser(req.params.workspaceId, req.user);
+  if (!workspace) return res.status(404).json({ error: "Không tìm thấy workspace." });
+  const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+  if (!message) return res.status(400).json({ error: "Lời nhắc không được để trống." });
+  if (message.length > 500) return res.status(400).json({ error: "Lời nhắc không được vượt quá 500 ký tự." });
+
+  const anonymous = req.body?.anonymous === true;
+  const notification = {
+    id: `notification-${crypto.randomUUID()}`,
+    message,
+    senderName: anonymous ? "Một thành viên trong nhóm" : req.user.name,
+    senderId: anonymous ? null : req.user.id,
+    createdAt: new Date().toISOString(),
+  };
+  workspace.notifications = Array.isArray(workspace.notifications) ? workspace.notifications : [];
+  workspace.notifications.unshift(notification);
+  workspace.notifications = workspace.notifications.slice(0, 100);
+  await saveStore();
+  io.to(`workspace:${workspace.id}`).emit("workspace:notification", notification);
+  res.status(201).json(notification);
+}));
+
 app.post("/api/workspaces/:workspaceId/ai-plan", authenticate, asyncRoute(async (req, res) => {
   const workspace = workspaceForUser(req.params.workspaceId, req.user);
   if (!workspace) return res.status(404).json({ error: "Không tìm thấy workspace." });

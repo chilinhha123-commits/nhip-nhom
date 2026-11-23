@@ -38,6 +38,14 @@ type CommentItem = {
   createdAt: string;
 };
 
+type GroupNotification = {
+  id: string;
+  message: string;
+  senderName: string;
+  senderId: string | null;
+  createdAt: string;
+};
+
 type Task = {
   id: string;
   title: string;
@@ -110,6 +118,11 @@ const priorities: { key: Priority; label: string }[] = [
   { key: "LOW", label: "Thấp" },
   { key: "MEDIUM", label: "Trung bình" },
   { key: "HIGH", label: "Cao" },
+];
+
+const reminderTemplates = [
+  "Cả nhà ơi cùng kiểm tra lại tiến độ các đầu việc sắp đến hạn nhé 🌿",
+  "Mọi người cập nhật trạng thái công việc của mình lên bảng nha!",
 ];
 
 const todayLabel = new Intl.DateTimeFormat("vi-VN", {
@@ -208,53 +221,37 @@ function Avatar({
   );
 }
 
-function CloudSticker({ className = "" }: { className?: string }) {
+function RhythmMark({ className = "" }: { className?: string }) {
   return (
     <svg
       className={className}
-      viewBox="0 0 150 125"
+      viewBox="0 0 56 56"
       role="img"
-      aria-label="Bạn mây xanh đang mỉm cười"
+      aria-label="Nhịp làm việc nhóm"
     >
-      <path
-        d="M38 99c-17 0-29-12-29-27 0-14 11-25 26-27 5-20 21-33 42-33 24 0 42 17 45 40 14 2 23 12 23 25 0 13-11 22-27 22H38Z"
-        fill="#A7C7E7"
-        stroke="#6FAED5"
-        strokeWidth="5"
-        strokeLinejoin="round"
-      />
-      <path d="M51 67v2m38-2v2" stroke="#315B73" strokeWidth="6" strokeLinecap="round" />
-      <path d="M63 77q7 10 14 0" fill="none" stroke="#315B73" strokeWidth="4" strokeLinecap="round" />
-      <ellipse cx="39" cy="79" rx="8" ry="4" fill="#F3A9AC" opacity=".8" />
-      <ellipse cx="101" cy="79" rx="8" ry="4" fill="#F3A9AC" opacity=".8" />
-      <path d="m125 11 4 9 10 1-7 6 2 9-9-5-8 5 2-9-7-6 10-1 3-9Z" fill="#FFE18A" stroke="#E8BD5D" strokeWidth="2" strokeLinejoin="round" />
+      <rect x="3" y="3" width="50" height="50" rx="16" fill="#dcfce7" stroke="#86efac" strokeWidth="2" />
+      <path d="M13 29h5l4-9 7 17 5-12 3 4h6" fill="none" stroke="#15803d" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-function CatPencilSticker({ className = "" }: { className?: string }) {
+function TeamFlowIllustration({ className = "" }: { className?: string }) {
   return (
     <svg
       className={className}
-      viewBox="0 0 150 155"
+      viewBox="0 0 220 92"
       role="img"
-      aria-label="Chú mèo nhỏ đang cầm bút chì"
+      aria-label="Các thành viên cùng hoàn thành công việc"
     >
-      <path
-        d="m38 52-7-29 28 15c11-4 23-4 34 0l27-15-6 32c8 11 11 25 9 42-4 27-22 43-47 43-27 0-47-18-49-46-1-16 3-31 11-42Z"
-        fill="#FFFEFA"
-        stroke="#6FAED5"
-        strokeWidth="5"
-        strokeLinejoin="round"
-      />
-      <path d="m42 45-4-12 15 8m43 0 14-8-3 15" fill="none" stroke="#A7C7E7" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M54 76v2m38-2v2" stroke="#355B70" strokeWidth="6" strokeLinecap="round" />
-      <path d="M67 89q7 9 14 0" fill="none" stroke="#355B70" strokeWidth="4" strokeLinecap="round" />
-      <ellipse cx="44" cy="87" rx="8" ry="4" fill="#F3A9AC" opacity=".8" />
-      <ellipse cx="102" cy="87" rx="8" ry="4" fill="#F3A9AC" opacity=".8" />
-      <path d="m113 109 22-35 9 6-22 35-12 7 3-13Z" fill="#FFD978" stroke="#6FAED5" strokeWidth="3" strokeLinejoin="round" />
-      <path d="m113 109 9 6" stroke="#6FAED5" strokeWidth="3" />
-      <path d="m18 94 3 6 7 1-5 5 1 7-6-4-6 4 1-7-5-5 7-1 3-6Z" fill="#FFD978" stroke="#E8BD5D" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M39 45h63m17 0h62" stroke="#86efac" strokeWidth="3" strokeLinecap="round" />
+      <rect x="10" y="17" width="58" height="56" rx="15" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="2" />
+      <circle cx="39" cy="35" r="8" fill="#15803d" />
+      <path d="M25 58c2-9 8-13 14-13s12 4 14 13" fill="#16a34a" />
+      <rect x="81" y="17" width="58" height="56" rx="15" fill="#f7fee7" stroke="#d9f99d" strokeWidth="2" />
+      <path d="m96 44 8 8 20-21" fill="none" stroke="#4d7c0f" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="152" y="17" width="58" height="56" rx="15" fill="#f0fdfa" stroke="#99f6e4" strokeWidth="2" />
+      <circle cx="181" cy="35" r="8" fill="#0f766e" />
+      <path d="M167 58c2-9 8-13 14-13s12 4 14 13" fill="#0d9488" />
     </svg>
   );
 }
@@ -1242,7 +1239,8 @@ function TaskDetail({
                     <Avatar member={member} />
                     <div>
                       <small>{role.label}</small>
-                      <strong>{memberLabel(member) || "Chưa phân công"}</strong>
+                      <strong>{member?.name || "Chưa phân công"}</strong>
+                      {member?.email && <span className="role-email">{member.email}</span>}
                     </div>
                   </div>
                 );
@@ -1388,7 +1386,7 @@ function LoginPage({
           <span>nhịp nhóm</span>
         </div>
         <div className="login-hero-copy">
-          <CloudSticker className="hero-cloud-sticker" />
+          <RhythmMark className="hero-rhythm-mark" />
           <span className="eyebrow">MỖI NGÀY MỘT NHỊP NHÀNG</span>
           <h1>
             Cùng nhau làm việc,
@@ -1400,29 +1398,28 @@ function LoginPage({
             tập trung.
           </p>
           <div className="login-preview">
-            <CatPencilSticker className="preview-cat-sticker" />
+            <TeamFlowIllustration className="preview-team-illustration" />
             <div className="preview-heading">
-              <span className="preview-sun">☼</span>
+              <span className="preview-sun">●</span>
               <span>KHÔNG GIAN CỦA BẠN</span>
             </div>
             <div className="preview-empty">
-              <span aria-hidden="true">☁</span>
+              <span className="preview-checkmark" aria-hidden="true">✓</span>
               <strong>Bắt đầu từ trang trắng</strong>
               <small>Tạo workspace riêng cho nhóm của bạn.</small>
             </div>
-            <div className="preview-cloud" aria-hidden="true">☁</div>
           </div>
         </div>
         <div className="login-hero-foot">
-          <span>☁ Ít áp lực hơn</span>
-          <span>✿ Nhiều niềm vui hơn</span>
+          <span>Ít áp lực hơn</span>
+          <span>Nhịp nhàng hơn</span>
         </div>
       </section>
 
       <section className="login-panel">
         <div className="login-card">
           <div className="login-card-mark">
-            <CloudSticker className="login-cloud-icon" />
+            <RhythmMark className="login-rhythm-icon" />
           </div>
           <span className="eyebrow">CHÀO MỪNG BẠN</span>
           <h2>Đăng nhập vào Nhịp Nhóm</h2>
@@ -1432,7 +1429,7 @@ function LoginPage({
             {config.googleClientId ? (
               <GoogleLogin
                 width={String(googleButtonWidth)}
-                theme="filled_blue"
+                theme="outline"
                 shape="pill"
                 size="large"
                 text="signin_with"
@@ -1491,6 +1488,168 @@ function LoginPage({
   );
 }
 
+function mergeNotifications(
+  current: GroupNotification[],
+  incoming: GroupNotification[],
+): GroupNotification[] {
+  const unique = new Map<string, GroupNotification>();
+  for (const notification of [...current, ...incoming]) unique.set(notification.id, notification);
+  return [...unique.values()]
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, 100);
+}
+
+function GroupNotificationsPanel({
+  session,
+  workspaceId,
+  notifications,
+  loading,
+  loadError,
+  emailConfigured,
+  onClose,
+  onSent,
+}: {
+  session: UserSession;
+  workspaceId: string;
+  notifications: GroupNotification[];
+  loading: boolean;
+  loadError: string;
+  emailConfigured: boolean;
+  onClose: () => void;
+  onSent: (notification: GroupNotification) => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState("custom");
+  const [anonymous, setAnonymous] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function sendReminder(event: FormEvent) {
+    event.preventDefault();
+    if (!message.trim()) {
+      setError("Hãy nhập lời nhắc trước khi gửi.");
+      return;
+    }
+    setSending(true);
+    setError("");
+    try {
+      const saved = await api<GroupNotification>(
+        `/api/workspaces/${workspaceId}/notifications`,
+        session,
+        { method: "POST", body: JSON.stringify({ message: message.trim(), anonymous }) },
+      );
+      onSent(saved);
+      setMessage("");
+      setSelectedTemplate("custom");
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "Không gửi được lời nhắc cho nhóm.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !sending) onClose();
+      }}
+    >
+      <section className="dialog group-notifications-dialog" role="dialog" aria-modal="true" aria-labelledby="notifications-title">
+        <header className="dialog-heading">
+          <div>
+            <span className="eyebrow">KHÔNG GIAN NHÓM</span>
+            <h2 id="notifications-title">Thông báo</h2>
+          </div>
+          <button className="close-button" onClick={onClose} disabled={sending} aria-label="Đóng">
+            ×
+          </button>
+        </header>
+
+        <section className="notification-compose">
+          <div className="notification-section-heading">
+            <h3>Gửi lời nhắc nhẹ nhàng tới cả nhóm</h3>
+            <p>{emailConfigured
+              ? "Email nhắc hạn tự động đang được cấu hình riêng."
+              : "Email nhắc hạn chưa bật; lời nhắc trong nhóm vẫn hoạt động."}</p>
+          </div>
+          <form className="notification-form" onSubmit={sendReminder}>
+            <label>
+              Mẫu lời nhắn
+              <select
+                value={selectedTemplate}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSelectedTemplate(value);
+                  if (value !== "custom") setMessage(value);
+                }}
+              >
+                <option value="custom">Tự viết lời nhắn</option>
+                {reminderTemplates.map((template) => (
+                  <option value={template} key={template}>{template}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Nội dung lời nhắc
+              <textarea
+                value={message}
+                onChange={(event) => {
+                  setMessage(event.target.value);
+                  setSelectedTemplate("custom");
+                }}
+                maxLength={500}
+                rows={3}
+                placeholder="Viết lời nhắn ngắn, tích cực cho cả nhóm..."
+                required
+              />
+            </label>
+            <label className="notification-anonymous">
+              <input
+                type="checkbox"
+                checked={anonymous}
+                onChange={(event) => setAnonymous(event.target.checked)}
+              />
+              <span>Gửi ẩn danh <small>(hiển thị là “Một thành viên trong nhóm”)</small></span>
+            </label>
+            {(error || loadError) && <p className="inline-error">{error || loadError}</p>}
+            <button type="submit" className="button primary" disabled={sending || !message.trim()}>
+              {sending ? "Đang gửi..." : "Gửi thông báo cho mọi người"}
+            </button>
+          </form>
+        </section>
+
+        <section className="notification-history">
+          <div className="notification-section-heading">
+            <h3>Lời nhắn gần đây</h3>
+            <span>{notifications.length}</span>
+          </div>
+          {loading ? (
+            <p className="notification-empty">Đang tải thông báo...</p>
+          ) : notifications.length ? (
+            <div className="notification-list">
+              {notifications.map((notification) => (
+                <article className="notification-item" key={notification.id}>
+                  <p>{notification.message}</p>
+                  <div>
+                    <strong>{notification.senderName}</strong>
+                    <time>{new Date(notification.createdAt).toLocaleString("vi-VN", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}</time>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="notification-empty">Chưa có lời nhắn nào trong workspace.</p>
+          )}
+        </section>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const [config, setConfig] = useState<Config>({
     googleClientId: "",
@@ -1508,6 +1667,10 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [modalTask, setModalTask] = useState<Task | null | "new">(null);
   const [showAiPlan, setShowAiPlan] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<GroupNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsLoadError, setNotificationsLoadError] = useState("");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -1579,6 +1742,10 @@ export default function App() {
         : { demoEmail: session.user.email, workspaceId: session.workspaceId },
     });
     connection.on("tasks:changed", reload);
+    connection.on("workspace:notification", (notification: GroupNotification) => {
+      setNotifications((current) => mergeNotifications(current, [notification]));
+      setNotice(`Lời nhắc nhóm: ${notification.message}`);
+    });
     connection.on("connect_error", (error) =>
       setLoadError(`Kết nối trực tiếp bị gián đoạn: ${error.message}`),
     );
@@ -1964,6 +2131,24 @@ export default function App() {
     }
   }
 
+  async function openNotifications() {
+    if (!session?.workspaceId) return;
+    setShowNotifications(true);
+    setNotificationsLoading(true);
+    setNotificationsLoadError("");
+    try {
+      const saved = await api<GroupNotification[]>(
+        `/api/workspaces/${session.workspaceId}/notifications`,
+        session,
+      );
+      setNotifications((current) => mergeNotifications(current, saved));
+    } catch (error) {
+      setNotificationsLoadError(error instanceof Error ? error.message : "Không tải được thông báo.");
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }
+
   function switchWorkspace(workspaceId: string) {
     if (!session || workspaceId === session.workspaceId) return;
     const nextSession = { ...session, workspaceId };
@@ -1973,6 +2158,8 @@ export default function App() {
     setMembers([]);
     setDetailTaskId(null);
     setShowAiPlan(false);
+    setShowNotifications(false);
+    setNotifications([]);
     setLoading(true);
   }
 
@@ -1985,6 +2172,8 @@ export default function App() {
     setLoading(false);
     setDetailTaskId(null);
     setShowAiPlan(false);
+    setShowNotifications(false);
+    setNotifications([]);
   }
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === session?.workspaceId);
@@ -2144,15 +2333,9 @@ export default function App() {
           <div className="top-actions">
             <button
               className="button secondary compact notification-button"
-              onClick={() =>
-                setNotice(
-                  config.emailConfigured
-                    ? "Email nhắc hạn sẽ gửi tới các thành viên được phân công."
-                    : "Email chưa cấu hình. Xem HUONG_DAN_CAI_DAT.md để bật nhắc hạn.",
-                )
-              }
+              onClick={() => void openNotifications()}
             >
-              Thông báo
+              Thông báo{notifications.length ? ` (${notifications.length})` : ""}
             </button>
             <div className="user-menu-wrap">
               <button className="user-menu" onClick={() => setMenuOpen((open) => !open)}>
@@ -2555,6 +2738,21 @@ export default function App() {
           tasks={tasks}
           onApply={applyAiPlan}
           onClose={() => setShowAiPlan(false)}
+        />
+      )}
+      {showNotifications && session && activeWorkspace && (
+        <GroupNotificationsPanel
+          session={session}
+          workspaceId={activeWorkspace.id}
+          notifications={notifications}
+          loading={notificationsLoading}
+          loadError={notificationsLoadError}
+          emailConfigured={config.emailConfigured}
+          onClose={() => setShowNotifications(false)}
+          onSent={(notification) => {
+            setNotifications((current) => mergeNotifications(current, [notification]));
+            setNotice("Đã gửi lời nhắc cho cả nhóm.");
+          }}
         />
       )}
       {detailTask && session && (

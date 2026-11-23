@@ -4649,3 +4649,386 @@ body {
     display: grid;
   }
 }
+
+.login-page {
+  color: #111827;
+  background: #f6faf7;
+  background-image: none;
+}
+
+.login-hero {
+  border-right: 1px solid #dcfce7;
+  background:
+    radial-gradient(circle at 85% 12%, #dcfce780 0, transparent 30%),
+    linear-gradient(145deg, #f0fdf4, #f6faf7 58%, #ecfdf5);
+}
+
+.login-hero::before,
+.login-hero::after {
+  border-color: #16a34a24;
+}
+
+.login-hero-copy .eyebrow,
+.login-card > .eyebrow {
+  color: #166534;
+}
+
+.login-hero-copy h1,
+.login-card h2 {
+  color: #111827;
+}
+
+.login-hero-copy h1 em {
+  color: #15803d;
+}
+
+.login-hero-copy > p,
+.login-subtitle,
+.login-foot {
+  color: #374151;
+}
+
+.login-preview,
+.login-card {
+  border: 1px solid #dcfce7;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 26px #16653412;
+}
+
+.login-preview {
+  padding: 14px 16px;
+}
+
+.preview-heading {
+  color: #4b5563;
+}
+
+.preview-sun {
+  color: #16a34a;
+  font-size: 9px;
+}
+
+.preview-team-illustration {
+  display: block;
+  width: min(100%, 220px);
+  height: 74px;
+  margin: 2px auto 0;
+}
+
+.preview-empty {
+  min-height: 74px;
+  border-top-color: #e5e7eb;
+  color: #4b5563;
+}
+
+.preview-empty > span.preview-checkmark {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #166534;
+  background: #dcfce7;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.preview-empty strong {
+  color: #132a1e;
+}
+
+.preview-empty small,
+.login-hero-foot {
+  color: #4b5563;
+}
+
+.login-panel {
+  background: #f6faf7;
+}
+
+.login-card {
+  padding: 30px;
+}
+
+.login-card-mark {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 20px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.login-rhythm-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.hero-rhythm-mark {
+  position: absolute;
+  top: -25px;
+  right: 0;
+  width: 72px;
+  height: 72px;
+}
+
+.google-login {
+  border: 1px solid #dcfce7;
+  border-radius: 10px;
+  background: #f0fdf4;
+  box-shadow: none;
+}
+
+.google-action {
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  background: #fff;
+  box-shadow: none;
+}
+
+.google-action:hover {
+  border-color: #16a34a;
+  color: #14532d;
+  background: #f0fdf4;
+  box-shadow: none;
+}
+
+.google-arrow,
+.config-hint,
+.separator,
+.demo-picker label {
+  color: #374151;
+}
+
+.separator::before {
+  background: #d1dfd7;
+}
+
+.separator span {
+  background: #fff;
+}
+
+.demo-picker select,
+.demo-picker input {
+  border-color: #cbd5e1;
+  border-radius: 8px;
+  color: #111827;
+  background: #fff;
+}
+
+.demo-button {
+  border: 1px solid #15803d;
+  border-radius: 8px;
+  color: #fff;
+  background: #15803d;
+  box-shadow: none;
+}
+
+.demo-button:hover {
+  background: #166534;
+  box-shadow: none;
+}
+
+.login-error {
+  color: #b91c1c;
+}
+
+.role-item {
+  align-items: flex-start;
+  gap: 9px;
+  border-color: #d1dfd7;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.role-icon {
+  padding-top: 2px;
+  color: #166534;
+}
+
+.role-item > div {
+  gap: 3px;
+}
+
+.role-item small {
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.role-item strong {
+  overflow: visible;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.role-email {
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.group-notifications-dialog {
+  width: min(100%, 620px);
+  max-height: min(92vh, 840px);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.group-notifications-dialog .dialog-heading h2 {
+  color: #111827;
+}
+
+.notification-compose,
+.notification-history {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.notification-compose {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.notification-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notification-section-heading h3 {
+  margin: 0;
+  color: #132a1e;
+  font-size: 14px;
+}
+
+.notification-section-heading p,
+.notification-section-heading > span {
+  margin: 0;
+  color: #4b5563;
+  font-size: 10px;
+}
+
+.notification-form {
+  display: grid;
+  gap: 10px;
+}
+
+.notification-form > label:not(.notification-anonymous) {
+  display: grid;
+  gap: 5px;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.notification-form select,
+.notification-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #111827;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.notification-form textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.notification-anonymous {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #374151;
+  font-size: 11px;
+}
+
+.notification-anonymous input {
+  margin: 2px 0 0;
+  accent-color: #15803d;
+}
+
+.notification-anonymous small {
+  color: #4b5563;
+}
+
+.notification-history {
+  overflow: auto;
+  padding-top: 14px;
+}
+
+.notification-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.notification-item {
+  padding: 10px 12px;
+  border: 1px solid #d1dfd7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.notification-item p {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notification-item > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #4b5563;
+  font-size: 10px;
+}
+
+.notification-empty {
+  margin: 0;
+  color: #4b5563;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .login-page {
+    background: #f6faf7;
+  }
+
+  .login-card {
+    border-radius: 16px;
+  }
+
+  .group-notifications-dialog {
+    max-height: 94vh;
+    padding: 16px;
+  }
+
+  .notification-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .role-list {
+    grid-template-columns: 1fr;
+  }
+}
