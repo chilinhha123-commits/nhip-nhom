@@ -3705,18 +3705,23 @@ body {
 }
 
 .tiny-status.in_progress {
-  color: #166534;
-  background: #dcfce7;
+  color: #3f6212;
+  background: #ecfccb;
 }
 
 .tiny-status.review {
-  color: #4d7c0f;
-  background: #ecfccb;
+  color: #0f766e;
+  background: #ccfbf1;
 }
 
 .tiny-status.done {
   color: #fff;
   background: #15803d;
+}
+
+.tiny-status.todo {
+  color: #9a3412;
+  background: #ffedd5;
 }
 
 .empty-column {
@@ -3868,11 +3873,15 @@ body {
 }
 
 .legend-review .legend-dot {
-  background: #a16207;
+  background: #0f766e;
 }
 
 .legend-done .legend-dot {
   background: #15803d;
+}
+
+.legend-todo .legend-dot {
+  background: #d97706;
 }
 
 .legend-item strong {
@@ -3909,6 +3918,42 @@ body {
   color: #166534;
   font-size: 27px;
   line-height: 1;
+}
+
+.kpi-card.kpi-completed {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.kpi-card.kpi-completed > strong {
+  color: #15803d;
+}
+
+.kpi-card.kpi-review {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.kpi-card.kpi-review > strong {
+  color: #0f766e;
+}
+
+.kpi-card.kpi-due-soon {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.kpi-card.kpi-due-soon > strong {
+  color: #4338ca;
+}
+
+.kpi-card.kpi-unassigned {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.kpi-card.kpi-unassigned > strong {
+  color: #b45309;
 }
 
 .kpi-card.kpi-overdue {
@@ -4002,8 +4047,8 @@ body {
   flex: 0 0 auto;
   padding: 4px 7px;
   border-radius: 5px;
-  color: #166534;
-  background: #dcfce7;
+  color: #4338ca;
+  background: #eef2ff;
   font-size: 10px;
   font-weight: 800;
 }

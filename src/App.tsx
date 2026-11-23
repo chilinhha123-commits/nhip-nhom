@@ -1293,6 +1293,7 @@ export default function App() {
   );
   const doneCount = tasks.filter((task) => task.status === "DONE").length;
   const inProgressCount = tasks.filter((task) => task.status === "IN_PROGRESS").length;
+  const todoCount = tasks.filter((task) => task.status === "TODO").length;
   const dueSoonCount = tasks.filter((task) => {
     const remaining = Date.parse(task.deadline) - statsNow;
     return task.status !== "DONE" && remaining >= 0 && remaining <= 24 * 60 * 60 * 1_000;
@@ -1307,6 +1308,11 @@ export default function App() {
   const completionPercent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
   const completedShare = tasks.length ? (doneCount / tasks.length) * 100 : 0;
   const inProgressShare = tasks.length ? (inProgressCount / tasks.length) * 100 : 0;
+  const reviewShare = tasks.length ? (reviewCount / tasks.length) * 100 : 0;
+  const todoShare = tasks.length ? (todoCount / tasks.length) * 100 : 0;
+  const completedEnd = completedShare;
+  const inProgressEnd = completedEnd + inProgressShare;
+  const reviewEnd = inProgressEnd + reviewShare;
   const attentionTasks = tasks
     .filter((task) => {
       if (task.status === "DONE") return false;
@@ -1937,7 +1943,7 @@ export default function App() {
                     role="img"
                     aria-label={`${completionPercent}% hoàn thành`}
                     style={{
-                      background: `conic-gradient(#15803d 0% ${completedShare}%, #4d7c0f ${completedShare}% ${completedShare + inProgressShare}%, #e5e7eb ${completedShare + inProgressShare}% 100%)`,
+                      background: `conic-gradient(#15803d 0% ${completedEnd}%, #4d7c0f ${completedEnd}% ${inProgressEnd}%, #0f766e ${inProgressEnd}% ${reviewEnd}%, #d97706 ${reviewEnd}% ${reviewEnd + todoShare}%, #e5e7eb ${reviewEnd + todoShare}% 100%)`,
                     }}
                   >
                     <div className="progress-donut-center">
@@ -1962,11 +1968,11 @@ export default function App() {
               <section className="stats-kpi-grid" aria-label="Chỉ số dự án">
                 {[
                   ["Tổng đầu việc", tasks.length, ""],
-                  ["Đã hoàn thành", doneCount, ""],
-                  ["Đang chờ duyệt", reviewCount, ""],
+                  ["Đã hoàn thành", doneCount, "kpi-completed"],
+                  ["Đang chờ duyệt", reviewCount, "kpi-review"],
                   ["Trễ hạn", overdueTasks.length, "kpi-overdue"],
-                  ["Sắp đến hạn (24h)", dueSoonCount, ""],
-                  ["Chưa giao", unassignedCount, ""],
+                  ["Sắp đến hạn (24h)", dueSoonCount, "kpi-due-soon"],
+                  ["Chưa giao", unassignedCount, "kpi-unassigned"],
                 ].map(([label, count, className]) => (
                   <article className={`kpi-card ${className}`} key={label}>
                     <span>{label}</span>
