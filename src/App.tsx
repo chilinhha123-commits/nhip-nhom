@@ -19,6 +19,8 @@ type Member = {
   name: string;
   email: string;
   color: string;
+  strengths?: string[];
+  bioNote?: string;
 };
 
 type DocumentItem = {
@@ -75,6 +77,27 @@ type Workspace = {
 };
 
 type TaskDraft = Omit<Task, "id" | "createdAt" | "documents" | "comments">;
+type PlanMode = "strength_first" | "balance_first";
+type AIPlanTask = {
+  title: string;
+  description: string;
+  priority: Priority;
+  deadline: string | null;
+  assigneeIds: string[];
+  assigneeNames: string[];
+  assignmentReason: string;
+};
+type EditablePlanTask = AIPlanTask & { draftId: string };
+
+const memberStrengthOptions = [
+  "Lên ý tưởng & Kịch bản",
+  "Viết nội dung & Báo cáo",
+  "Thiết kế & Hình ảnh",
+  "Quay & Dựng video",
+  "Làm sản phẩm / Kỹ thuật",
+  "Thuyết trình",
+  "Tổng hợp & Điều phối",
+];
 
 const statuses: { key: Status; label: string }[] = [
   { key: "TODO", label: "Cần làm" },
@@ -110,6 +133,7 @@ async function api<T>(
   url: string,
   session: UserSession,
   options: RequestInit = {},
+  timeoutMs = 12_000,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   if (session.token) headers.set("Authorization", `Bearer ${session.token}`);
@@ -120,13 +144,13 @@ async function api<T>(
   }
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   let response: globalThis.Response;
   try {
     response = await fetch(url, { ...options, headers, signal: controller.signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Máy chủ phản hồi chậm. Mọi thay đổi đã được lưu tạm; hãy đợi tải lại danh sách.");
+      throw new Error("Máy chủ phản hồi chậm. Vui lòng kiểm tra kết nối rồi thử lại.");
     }
     throw error;
   } finally {
@@ -633,6 +657,345 @@ function TaskForm({
   );
 }
 
+function MemberStrengthProfile({
+  member,
+  session,
+  workspaceId,
+  canEdit,
+  onSaved,
+}: {
+  member: Member;
+  session: UserSession;
+  workspaceId: string;
+  canEdit: boolean;
+  onSaved: (members: Member[]) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [strengths, setStrengths] = useState<string[]>(member.strengths || []);
+  const [bioNote, setBioNote] = useState(member.bioNote || "");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setStrengths(member.strengths || []);
+    setBioNote(member.bioNote || "");
+  }, [member]);
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const updated = await api<Member[]>(
+        `/api/workspaces/${workspaceId}/members/${member.id}/profile`,
+        session,
+        { method: "PUT", body: JSON.stringify({ strengths, bioNote }) },
+      );
+      onSaved(updated);
+      setEditing(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Không lưu được hồ sơ điểm mạnh.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function toggleStrength(strength: string) {
+    setStrengths((current) => current.includes(strength)
+      ? current.filter((item) => item !== strength)
+      : [...current, strength]);
+  }
+
+  return (
+    <div className="member-profile">
+      {!editing ? (
+        <>
+          <div className="strength-tags">
+            {member.strengths?.length
+              ? member.strengths.map((strength) => <span className="strength-tag" key={strength}>{strength}</span>)
+              : <span className="profile-empty">Chưa cập nhật điểm mạnh</span>}
+          </div>
+          {member.bioNote && <p className="member-bio">{member.bioNote}</p>}
+          {canEdit && (
+            <button
+              className="profile-edit-button"
+              type="button"
+              onClick={() => {
+                setError("");
+                setEditing(true);
+              }}
+            >
+              Cập nhật điểm mạnh
+            </button>
+          )}
+        </>
+      ) : (
+        <form className="strength-editor" onSubmit={saveProfile}>
+          <div className="strength-options" aria-label={`Điểm mạnh của ${member.name}`}>
+            {memberStrengthOptions.map((strength) => (
+              <button
+                type="button"
+                key={strength}
+                className={`strength-option ${strengths.includes(strength) ? "selected" : ""}`}
+                aria-pressed={strengths.includes(strength)}
+                onClick={() => toggleStrength(strength)}
+              >
+                {strength}
+              </button>
+            ))}
+          </div>
+          <label>
+            Ghi chú ngắn
+            <textarea
+              value={bioNote}
+              onChange={(event) => setBioNote(event.target.value)}
+              maxLength={300}
+              rows={2}
+              placeholder="Kinh nghiệm, thời gian hoặc cách phối hợp..."
+            />
+          </label>
+          {error && <p className="inline-error">{error}</p>}
+          <div className="profile-actions">
+            <button type="button" className="button secondary compact" onClick={() => setEditing(false)}>
+              Huỷ
+            </button>
+            <button type="submit" className="button primary compact" disabled={pending}>
+              {pending ? "Đang lưu..." : "Lưu hồ sơ"}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function AIPlanModal({
+  session,
+  workspaceId,
+  members,
+  tasks,
+  onApply,
+  onClose,
+}: {
+  session: UserSession;
+  workspaceId: string;
+  members: Member[];
+  tasks: Task[];
+  onApply: (items: EditablePlanTask[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [projectDescription, setProjectDescription] = useState("");
+  const [mode, setMode] = useState<PlanMode>("strength_first");
+  const [plan, setPlan] = useState<EditablePlanTask[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generatePlan(event?: FormEvent) {
+    event?.preventDefault();
+    setGenerating(true);
+    setError("");
+    try {
+      const result = await api<{ tasks: AIPlanTask[] }>(
+        `/api/workspaces/${workspaceId}/ai-plan`,
+        session,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            projectDescription,
+            mode,
+            existingTasks: tasks.slice(0, 100).map(({ title, status }) => ({ title, status })),
+          }),
+        },
+        60_000,
+      );
+      setPlan(result.tasks.map((item) => ({ ...item, draftId: crypto.randomUUID() })));
+    } catch (generateError) {
+      setError(generateError instanceof Error ? generateError.message : "Không tạo được kế hoạch bằng AI.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function updateTask(draftId: string, updates: Partial<EditablePlanTask>) {
+    setPlan((current) => current.map((item) => item.draftId === draftId ? { ...item, ...updates } : item));
+  }
+
+  function toggleAssignee(task: EditablePlanTask, memberId: string) {
+    const selected = task.assigneeIds.includes(memberId)
+      ? task.assigneeIds.filter((id) => id !== memberId)
+      : [...task.assigneeIds, memberId];
+    if (selected.length > 3) {
+      setError("Mỗi nhiệm vụ có thể chọn tối đa 3 người tham gia.");
+      return;
+    }
+    if (!selected.length) {
+      setError("Mỗi nhiệm vụ cần ít nhất một người phụ trách.");
+      return;
+    }
+    setError("");
+    updateTask(task.draftId, {
+      assigneeIds: selected,
+      assigneeNames: selected.map((id) => members.find((member) => member.id === id)?.name || ""),
+    });
+  }
+
+  async function applyPlan() {
+    if (!plan.length) {
+      setError("Hãy tạo kế hoạch trước khi áp dụng.");
+      return;
+    }
+    setApplying(true);
+    setError("");
+    try {
+      await onApply(plan);
+      onClose();
+    } catch (applyError) {
+      const message = applyError instanceof Error ? applyError.message : "Không áp dụng được kế hoạch.";
+      const partialResult = message.match(/Đã tạo (\d+)\/\d+ nhiệm vụ/);
+      if (partialResult) setPlan((current) => current.slice(Number(partialResult[1])));
+      setError(message);
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !generating && !applying) onClose();
+      }}
+    >
+      <section className="dialog ai-plan-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-plan-title">
+        <header className="dialog-heading">
+          <div>
+            <span className="eyebrow">LẬP KẾ HOẠCH NHÓM</span>
+            <h2 id="ai-plan-title">AI lập kế hoạch & phân công</h2>
+          </div>
+          <button className="close-button" onClick={onClose} disabled={generating || applying} aria-label="Đóng">
+            ×
+          </button>
+        </header>
+        <form className="ai-plan-form" onSubmit={generatePlan}>
+          <label>
+            Mô tả dự án / bài tập
+            <textarea
+              value={projectDescription}
+              onChange={(event) => setProjectDescription(event.target.value)}
+              maxLength={10_000}
+              rows={4}
+              placeholder="Mục tiêu, sản phẩm cần nộp, yêu cầu và mốc thời gian (nếu có)..."
+              required
+            />
+          </label>
+          <label>
+            Cách chia việc
+            <select value={mode} onChange={(event) => setMode(event.target.value as PlanMode)}>
+              <option value="strength_first">Khớp điểm mạnh + hỗ trợ việc khó</option>
+              <option value="balance_first">Ưu tiên người ít việc + hỗ trợ việc khó</option>
+            </select>
+          </label>
+          {error && <p className="inline-error ai-plan-error">{error}</p>}
+          <div className="dialog-actions ai-plan-actions">
+            {plan.length > 0 && (
+              <button type="button" className="button secondary" onClick={() => void generatePlan()} disabled={generating || applying}>
+                Tạo lại
+              </button>
+            )}
+            <button type="submit" className="button primary" disabled={generating || applying || projectDescription.trim().length < 10}>
+              {generating ? "Đang lập kế hoạch..." : "Tạo kế hoạch bằng AI"}
+            </button>
+          </div>
+        </form>
+        {plan.length > 0 && (
+          <div className="ai-plan-results">
+            <div className="ai-plan-results-heading">
+              <h3>Đề xuất · {plan.length} đầu việc</h3>
+              <span>Chỉnh sửa trước khi đưa vào cột Cần làm</span>
+            </div>
+            {plan.map((item, index) => (
+              <article className="ai-plan-task" key={item.draftId}>
+                <header className="ai-plan-task-heading">
+                  <strong>Đầu việc {index + 1}</strong>
+                  <button
+                    type="button"
+                    className="ai-plan-remove"
+                    aria-label={`Xóa đề xuất ${item.title}`}
+                    onClick={() => setPlan((current) => current.filter((draft) => draft.draftId !== item.draftId))}
+                  >
+                    Xóa
+                  </button>
+                </header>
+                <label>
+                  Tên nhiệm vụ
+                  <input
+                    value={item.title}
+                    maxLength={120}
+                    onChange={(event) => updateTask(item.draftId, { title: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Mô tả
+                  <textarea
+                    value={item.description}
+                    maxLength={600}
+                    rows={2}
+                    onChange={(event) => updateTask(item.draftId, { description: event.target.value })}
+                  />
+                </label>
+                <div className="form-grid">
+                  <label>
+                    Mức ưu tiên
+                    <select
+                      value={item.priority}
+                      onChange={(event) => updateTask(item.draftId, { priority: event.target.value as Priority })}
+                    >
+                      {priorities.map((priority) => <option value={priority.key} key={priority.key}>{priority.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Hạn gợi ý
+                    <input
+                      type="datetime-local"
+                      value={item.deadline ? dateInputValue(item.deadline) : ""}
+                      onChange={(event) => updateTask(item.draftId, {
+                        deadline: event.target.value ? new Date(event.target.value).toISOString() : null,
+                      })}
+                    />
+                  </label>
+                </div>
+                <fieldset className="ai-assignee-picker">
+                  <legend>Người tham gia (chọn 1–3)</legend>
+                  <div className="ai-assignee-options">
+                    {members.map((member) => (
+                      <label key={member.id}>
+                        <input
+                          type="checkbox"
+                          checked={item.assigneeIds.includes(member.id)}
+                          onChange={() => toggleAssignee(item, member.id)}
+                        />
+                        <span>{member.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <p className="ai-assignment-reason"><strong>Lý do AI:</strong> {item.assignmentReason || "Đề xuất dựa trên thành viên và khối lượng hiện tại."}</p>
+              </article>
+            ))}
+            <div className="dialog-actions ai-plan-actions">
+              <button className="button secondary" onClick={onClose} disabled={applying || generating}>Đóng</button>
+              <button className="button primary" onClick={() => void applyPlan()} disabled={applying || generating || plan.length === 0}>
+                {applying ? "Đang tạo nhiệm vụ..." : "Áp dụng vào Bảng việc"}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function TaskDetail({
   task,
   members,
@@ -1132,6 +1495,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [modalTask, setModalTask] = useState<Task | null | "new">(null);
+  const [showAiPlan, setShowAiPlan] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -1433,6 +1797,51 @@ export default function App() {
     })();
   }
 
+  async function applyAiPlan(items: EditablePlanTask[]) {
+    if (!session) throw new Error("Bạn cần đăng nhập để áp dụng kế hoạch.");
+    const invalidItem = items.find((item) =>
+      !item.title.trim()
+      || !item.assigneeIds.some((id) => members.some((member) => member.id === id)));
+    if (invalidItem) {
+      throw new Error(`Đầu việc "${invalidItem.title || "chưa có tên"}" cần tên và ít nhất một người phụ trách.`);
+    }
+    let createdCount = 0;
+    for (const item of items) {
+      const assignees = item.assigneeIds.filter((id) => members.some((member) => member.id === id)).slice(0, 3);
+      const deadlineTime = item.deadline ? Date.parse(item.deadline) : NaN;
+      const draft: TaskDraft = {
+        title: item.title.trim(),
+        description: item.description.trim(),
+        status: "TODO",
+        priority: item.priority,
+        assigneeId: assignees[0],
+        supporterId: assignees[1] || assignees[0],
+        reviewerId: assignees[2] || assignees[1] || assignees[0],
+        deadline: Number.isFinite(deadlineTime)
+          ? new Date(deadlineTime).toISOString()
+          : new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
+        reminderAt: null,
+        reminderHoursBefore: null,
+      };
+      try {
+        const result = await api<{ task: Task; warnings: string[] }>("/api/tasks", session, {
+          method: "POST",
+          body: JSON.stringify(draft),
+        });
+        setTasks((current) => [result.task, ...current.filter((task) => task.id !== result.task.id)]);
+        createdCount += 1;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "Không lưu được nhiệm vụ.";
+        if (createdCount) {
+          setNotice(`Đã tạo ${createdCount}/${items.length} nhiệm vụ; phần còn lại chưa được lưu.`);
+          throw new Error(`Đã tạo ${createdCount}/${items.length} nhiệm vụ. ${reason}`);
+        }
+        throw error;
+      }
+    }
+    setNotice(`Đã áp dụng kế hoạch và tạo ${createdCount} nhiệm vụ vào cột Cần làm.`);
+  }
+
   async function changeStatus(taskId: string, status: Status) {
     if (!session) return;
     try {
@@ -1551,6 +1960,7 @@ export default function App() {
     setTasks([]);
     setMembers([]);
     setDetailTaskId(null);
+    setShowAiPlan(false);
     setLoading(true);
   }
 
@@ -1562,6 +1972,7 @@ export default function App() {
     setTasks([]);
     setLoading(false);
     setDetailTaskId(null);
+    setShowAiPlan(false);
   }
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === session?.workspaceId);
@@ -1779,9 +2190,14 @@ export default function App() {
             <p>{activeWorkspace.name}</p>
           </div>
           {mainTab === "board" && (
-            <button className="button primary create-button" onClick={() => setModalTask("new")}>
-              Tạo nhiệm vụ
-            </button>
+            <div className="page-heading-actions">
+              <button className="button secondary ai-plan-open-button" onClick={() => setShowAiPlan(true)}>
+                AI lập kế hoạch
+              </button>
+              <button className="button primary create-button" onClick={() => setModalTask("new")}>
+                + Tạo nhiệm vụ
+              </button>
+            </div>
           )}
         </section>
 
@@ -2079,14 +2495,23 @@ export default function App() {
                   <span>Thành viên</span><span>Vai trò</span><span>Email</span><span>Đầu việc</span>
                 </div>
                 {memberContributions.map(({ member, assigned, completed, role }) => (
-                  <div className="member-table-row" role="row" key={member.id}>
-                    <div className="member-name-cell">
-                      <Avatar member={member} size="small" />
-                      <strong>{member.name}</strong>
+                  <div className="member-record" key={member.id}>
+                    <div className="member-table-row" role="row">
+                      <div className="member-name-cell">
+                        <Avatar member={member} size="small" />
+                        <strong>{member.name}</strong>
+                      </div>
+                      <span>{role}</span>
+                      <span className="member-email">{member.email}</span>
+                      <span>{assigned} tổng · {completed} xong</span>
                     </div>
-                    <span>{role}</span>
-                    <span className="member-email">{member.email}</span>
-                    <span>{assigned} tổng · {completed} xong</span>
+                    <MemberStrengthProfile
+                      member={member}
+                      session={session}
+                      workspaceId={activeWorkspace.id}
+                      canEdit={currentUser?.id === member.id || currentUser?.id === activeWorkspace.ownerId}
+                      onSaved={setMembers}
+                    />
                   </div>
                 ))}
                 {members.length === 0 && <p className="empty-note">Chưa có thành viên.</p>}
@@ -2108,6 +2533,16 @@ export default function App() {
           busy={busy}
           onClose={() => setModalTask(null)}
           onSave={saveTask}
+        />
+      )}
+      {showAiPlan && session && activeWorkspace && (
+        <AIPlanModal
+          session={session}
+          workspaceId={activeWorkspace.id}
+          members={members}
+          tasks={tasks}
+          onApply={applyAiPlan}
+          onClose={() => setShowAiPlan(false)}
         />
       )}
       {detailTask && session && (

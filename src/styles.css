@@ -4341,3 +4341,289 @@ body {
 .tiny-status {
   font-size: 10px;
 }
+
+.page-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.ai-plan-open-button {
+  min-height: 38px;
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  font-weight: 800;
+}
+
+.ai-plan-open-button:hover {
+  border-color: #16a34a;
+  background: #dcfce7;
+}
+
+.member-record {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.member-record .member-table-row {
+  border-bottom: 0;
+}
+
+.member-profile {
+  padding: 0 0 12px 37px;
+}
+
+.strength-tags,
+.strength-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.strength-tag {
+  padding: 4px 8px;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  color: #166534;
+  background: #f0fdf4;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.profile-empty {
+  color: #4b5563;
+  font-size: 10px;
+}
+
+.member-bio {
+  margin: 7px 0 0;
+  color: #374151;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.profile-edit-button {
+  margin-top: 7px;
+  padding: 0;
+  border: 0;
+  color: #166534;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.strength-editor {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #d1dfd7;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.strength-option {
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #374151;
+  background: #fff;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.strength-option.selected {
+  border-color: #16a34a;
+  color: #166534;
+  background: #dcfce7;
+  font-weight: 800;
+}
+
+.strength-editor > label,
+.ai-plan-form > label,
+.ai-plan-task > label {
+  display: grid;
+  gap: 6px;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.strength-editor textarea,
+.ai-plan-form textarea,
+.ai-plan-form select,
+.ai-plan-task input,
+.ai-plan-task textarea,
+.ai-plan-task select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #111827;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.strength-editor textarea,
+.ai-plan-form textarea,
+.ai-plan-task textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.ai-plan-dialog {
+  width: min(100%, 850px);
+  padding: 22px;
+}
+
+.ai-plan-dialog .dialog-heading h2 {
+  color: #111827;
+}
+
+.ai-plan-form {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-plan-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+
+.ai-plan-results {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.ai-plan-results-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-plan-results-heading h3 {
+  margin: 0;
+  color: #132a1e;
+  font-size: 14px;
+}
+
+.ai-plan-results-heading span {
+  color: #4b5563;
+  font-size: 10px;
+}
+
+.ai-plan-task {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ai-plan-task-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #132a1e;
+  font-size: 12px;
+}
+
+.ai-plan-remove {
+  border: 0;
+  color: #b91c1c;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-assignee-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid #d1dfd7;
+  border-radius: 8px;
+}
+
+.ai-assignee-picker legend {
+  padding: 0 4px;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-assignee-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ai-assignee-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid #d1dfd7;
+  border-radius: 999px;
+  color: #374151;
+  background: #fff;
+  font-size: 10px;
+}
+
+.ai-assignee-options input {
+  accent-color: #15803d;
+}
+
+.ai-assignment-reason {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid #0f766e;
+  color: #374151;
+  background: #f0fdfa;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ai-assignment-reason strong {
+  color: #0f766e;
+}
+
+.ai-plan-error {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .page-heading-actions {
+    flex-wrap: wrap;
+  }
+
+  .member-profile {
+    padding-left: 0;
+  }
+
+  .ai-plan-dialog {
+    max-height: 94vh;
+    padding: 16px;
+  }
+
+  .ai-plan-results-heading {
+    display: grid;
+  }
+}
