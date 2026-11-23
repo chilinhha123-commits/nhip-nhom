@@ -12,6 +12,7 @@ import {
 
 type Status = "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
 type Priority = "LOW" | "MEDIUM" | "HIGH";
+type MainTab = "board" | "stats" | "members";
 
 type Member = {
   id: string;
@@ -70,15 +71,16 @@ type Workspace = {
   id: string;
   name: string;
   ownerId: string;
+  inviteCode: string;
 };
 
 type TaskDraft = Omit<Task, "id" | "createdAt" | "documents" | "comments">;
 
-const statuses: { key: Status; label: string; icon: string }[] = [
-  { key: "TODO", label: "Cần làm", icon: "☁" },
-  { key: "IN_PROGRESS", label: "Đang làm", icon: "🌱" },
-  { key: "REVIEW", label: "Chờ duyệt", icon: "💌" },
-  { key: "DONE", label: "Hoàn thành", icon: "⭐" },
+const statuses: { key: Status; label: string }[] = [
+  { key: "TODO", label: "Cần làm" },
+  { key: "IN_PROGRESS", label: "Đang làm" },
+  { key: "REVIEW", label: "Chờ duyệt" },
+  { key: "DONE", label: "Hoàn thành" },
 ];
 
 const priorities: { key: Priority; label: string }[] = [
@@ -268,7 +270,8 @@ function TaskCard({
 
   const countdown = formatCountdown(task.deadline, now);
   const remaining = Date.parse(task.deadline) - now;
-  const urgent = remaining <= 24 * 60 * 60 * 1_000 && task.status !== "DONE";
+  const overdue = remaining < 0 && task.status !== "DONE";
+  const urgent = remaining >= 0 && remaining <= 24 * 60 * 60 * 1_000 && task.status !== "DONE";
   const status = statuses.find((item) => item.key === task.status);
   const person = (id: string) => members.find((member) => member.id === id);
 
@@ -287,7 +290,7 @@ function TaskCard({
           {priorities.find((item) => item.key === task.priority)?.label}
         </span>
         <label className="card-status-select" onClick={(event) => event.stopPropagation()}>
-          <span aria-hidden="true">···</span>
+          <span aria-hidden="true">Trạng thái</span>
           <select
             aria-label="Đổi trạng thái nhiệm vụ"
             value={task.status}
@@ -305,11 +308,8 @@ function TaskCard({
       <h3>{task.title}</h3>
       {task.description && <p className="task-description">{task.description}</p>}
 
-      <div className={`countdown ${urgent ? "urgent" : ""}`}>
-        <span className="countdown-icon" aria-hidden="true">
-          ◷
-        </span>
-        <span>{countdown.text}</span>
+      <div className={`countdown ${urgent ? "urgent" : ""} ${overdue ? "overdue" : ""}`}>
+        <span>{overdue ? "Trễ hạn" : countdown.text}</span>
         {!countdown.expired && <small>còn lại</small>}
       </div>
 
@@ -324,12 +324,14 @@ function TaskCard({
         </div>
         <div className="card-meta">
           {task.documents.length > 0 && (
-            <span title="Tài liệu">↗ {task.documents.length}</span>
+            <span title="Tài liệu">{task.documents.length} tài liệu</span>
           )}
           {task.comments.length > 0 && (
-            <span title="Bình luận">♡ {task.comments.length}</span>
+            <span title="Bình luận">{task.comments.length} bình luận</span>
           )}
-          <span className={`tiny-status ${status?.key.toLowerCase()}`} title={status?.label} />
+          <span className={`tiny-status ${status?.key.toLowerCase()}`} title={status?.label}>
+            {status?.label}
+          </span>
         </div>
       </div>
     </article>
@@ -1134,14 +1136,16 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"board" | "list">("board");
+  const [mainTab, setMainTab] = useState<MainTab>("board");
   const [menuOpen, setMenuOpen] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const browserReminderKeys = useRef(new Set<string>());
+  const [statsNow, setStatsNow] = useState(Date.now());
   const [workspaceName, setWorkspaceName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberName, setMemberName] = useState("");
   const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
-  const [showMemberForm, setShowMemberForm] = useState(false);
   const currentUser = session?.user;
   const googleButtonWidth = Math.min(360, Math.max(220, window.innerWidth - 112));
 
@@ -1217,6 +1221,11 @@ export default function App() {
   }, [notice]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setStatsNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (!tasks.length) return;
 
     const checkBrowserReminders = () => {
@@ -1283,11 +1292,25 @@ export default function App() {
     [tasks, filter, search],
   );
   const doneCount = tasks.filter((task) => task.status === "DONE").length;
-  const activeCount = tasks.filter((task) => task.status === "IN_PROGRESS").length;
   const dueSoonCount = tasks.filter((task) => {
-    const remaining = Date.parse(task.deadline) - Date.now();
+    const remaining = Date.parse(task.deadline) - statsNow;
     return task.status !== "DONE" && remaining >= 0 && remaining <= 24 * 60 * 60 * 1_000;
   }).length;
+  const overdueTasks = tasks.filter(
+    (task) => task.status !== "DONE" && Date.parse(task.deadline) < statsNow,
+  );
+  const reviewCount = tasks.filter((task) => task.status === "REVIEW").length;
+  const unassignedCount = tasks.filter(
+    (task) => !task.assigneeId || !members.some((member) => member.id === task.assigneeId),
+  ).length;
+  const completionPercent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
+  const attentionTasks = tasks
+    .filter((task) => {
+      if (task.status === "DONE") return false;
+      const remaining = Date.parse(task.deadline) - statsNow;
+      return remaining < 0 || (remaining >= 0 && remaining <= 24 * 60 * 60 * 1_000);
+    })
+    .sort((left, right) => Date.parse(left.deadline) - Date.parse(right.deadline));
   const detailTask = detailTaskId ? tasks.find((task) => task.id === detailTaskId) : undefined;
 
   function storeSession(next: UserSession) {
@@ -1456,6 +1479,41 @@ export default function App() {
     }
   }
 
+  async function joinWorkspace(event: FormEvent) {
+    event.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    setLoadError("");
+    try {
+      const workspace = await api<Workspace>("/api/workspaces/join", session, {
+        method: "POST",
+        body: JSON.stringify({ code: joinCode }),
+      });
+      const nextSession = { ...session, workspaceId: workspace.id };
+      localStorage.setItem("nhip-nhom-user", JSON.stringify(nextSession));
+      setSession(nextSession);
+      setWorkspaces((current) => current.some((item) => item.id === workspace.id)
+        ? current
+        : [...current, workspace]);
+      setJoinCode("");
+      setLoading(true);
+      setNotice(`Đã tham gia nhóm "${workspace.name}".`);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Không tham gia được nhóm.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyInviteCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setNotice(`Đã sao chép mã mời ${code}.`);
+    } catch {
+      setNotice("Không thể sao chép mã tự động. Hãy chọn và sao chép mã hiển thị.");
+    }
+  }
+
   async function addMember(event: FormEvent) {
     event.preventDefault();
     if (!session?.workspaceId) return;
@@ -1468,7 +1526,6 @@ export default function App() {
       setMembers(team);
       setMemberEmail("");
       setMemberName("");
-      setShowMemberForm(false);
       setNotice("Đã thêm email vào workspace. Thành viên có thể đăng nhập bằng địa chỉ này.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Không thêm được thành viên.");
@@ -1499,6 +1556,18 @@ export default function App() {
   }
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === session?.workspaceId);
+  const completedTasks = tasks.filter((task) => task.status === "DONE").length;
+  const memberContributions = members.map((member) => {
+    const assignedTasks = tasks.filter((task) => task.assigneeId === member.id);
+    const completedByMember = assignedTasks.filter((task) => task.status === "DONE").length;
+    return {
+      member,
+      assigned: assignedTasks.length,
+      completed: completedByMember,
+      contribution: completedTasks ? Math.round((completedByMember / completedTasks) * 100) : 0,
+      role: activeWorkspace?.ownerId === member.id ? "Trưởng nhóm" : "Thành viên",
+    };
+  });
 
   if (!session) {
     return (
@@ -1533,12 +1602,11 @@ export default function App() {
             <span className="brand-mark">n</span>
             <span>nhịp nhóm</span>
           </div>
-          <CloudSticker className="workspace-empty-cloud" />
           <span className="eyebrow">CHÀO {currentUser?.name.toLocaleUpperCase("vi-VN")}</span>
-          <h1>Tạo workspace đầu tiên</h1>
+          <h1>Tạo workspace hoặc tham gia nhóm</h1>
           <p>
             Workspace mới bắt đầu hoàn toàn trống. Bạn có thể tạo bảng riêng và thêm thành viên
-            bằng email của họ.
+            bằng email, hoặc tham gia nhóm khác bằng mã mời.
           </p>
           {loadError && <p className="inline-error">{loadError}</p>}
           <form onSubmit={createWorkspace} className="workspace-create-form">
@@ -1553,6 +1621,22 @@ export default function App() {
             />
             <button type="submit" className="button primary" disabled={busy}>
               {busy ? "Đang tạo..." : "Tạo workspace"}
+            </button>
+          </form>
+          <div className="workspace-join-divider">HOẶC THAM GIA NHÓM</div>
+          <form onSubmit={joinWorkspace} className="workspace-create-form workspace-join-form">
+            <label htmlFor="workspace-invite-code">Mã mời nhóm</label>
+            <input
+              id="workspace-invite-code"
+              value={joinCode}
+              onChange={(event) => setJoinCode(event.target.value)}
+              placeholder="Ví dụ: A1B2C3D4"
+              maxLength={16}
+              autoComplete="off"
+              required
+            />
+            <button type="submit" className="button secondary" disabled={busy}>
+              {busy ? "Đang tham gia..." : "Tham gia nhóm"}
             </button>
           </form>
           <button className="side-link workspace-signout" onClick={signOut}>Đăng xuất</button>
@@ -1605,73 +1689,14 @@ export default function App() {
           </form>
         )}
 
-        <div className="side-label">GÓC CỦA NHÓM</div>
-        <nav className="side-nav">
-          <button
-            className={`nav-item ${view === "board" ? "active" : ""}`}
-            onClick={() => setView("board")}
-          >
-            <span>▦</span>Tổng quan <kbd>⌘ 1</kbd>
-          </button>
-          <button
-            className={`nav-item ${view === "list" ? "active" : ""}`}
-            onClick={() => setView("list")}
-          >
-            <span>☷</span>Tất cả nhiệm vụ
-          </button>
-        </nav>
-
-        <div className="side-label team-label">
-          CÁC THÀNH VIÊN <span aria-hidden="true">✿</span>
-        </div>
-        <button className="side-link add-member-toggle" onClick={() => setShowMemberForm((open) => !open)}>
-          <span>＋</span>Thêm thành viên bằng email
-        </button>
-        {showMemberForm && (
-          <form className="sidebar-inline-form" onSubmit={addMember}>
-            <input
-              aria-label="Email thành viên"
-              type="email"
-              value={memberEmail}
-              onChange={(event) => setMemberEmail(event.target.value)}
-              placeholder="email@congty.com"
-              required
-            />
-            <input
-              aria-label="Tên hiển thị thành viên"
-              value={memberName}
-              onChange={(event) => setMemberName(event.target.value)}
-              placeholder="Tên hiển thị"
-              maxLength={80}
-            />
-            <button type="submit" disabled={busy}>Thêm</button>
-          </form>
-        )}
-        <div className="team-list">
-          {members.map((member) => (
-            <div className="team-person" key={member.id}>
-              <Avatar member={member} size="small" />
-              <span title={member.email}>{memberLabel(member)}</span>
-              <i />
-            </div>
-          ))}
-        </div>
-
         <div className="sidebar-bottom">
-          <div className="help-card">
-            <div className="help-icon">☀</div>
-            <strong>Cùng nhau giữ nhịp</strong>
-            <p>Mỗi bước nhỏ đều đưa cả nhóm tiến gần hơn.</p>
-          </div>
           <button
             className="side-link"
             onClick={() => setNotice("Hướng dẫn cấu hình nằm trong HUONG_DAN_CAI_DAT.md.")}
           >
-            <span>♡</span>Trợ giúp & hướng dẫn
+            Trợ giúp & hướng dẫn
           </button>
-          <button className="side-link" onClick={signOut}>
-            <span>↪</span>Đăng xuất
-          </button>
+          <button className="side-link" onClick={signOut}>Đăng xuất</button>
         </div>
       </aside>
 
@@ -1680,12 +1705,13 @@ export default function App() {
           <div className="breadcrumbs">
             <span>{activeWorkspace.name}</span>
             <b>/</b>
-            <strong>{view === "board" ? "Tổng quan" : "Tất cả nhiệm vụ"}</strong>
+            <strong>
+              {mainTab === "board" ? "Bảng việc" : mainTab === "stats" ? "Thống kê" : "Thành viên"}
+            </strong>
           </div>
           <div className="top-actions">
             <button
-              className="icon-button notification-button"
-              aria-label="Thông báo"
+              className="button secondary compact notification-button"
               onClick={() =>
                 setNotice(
                   config.emailConfigured
@@ -1694,8 +1720,7 @@ export default function App() {
                 )
               }
             >
-              ♡
-              <i />
+              Thông báo
             </button>
             <div className="user-menu-wrap">
               <button className="user-menu" onClick={() => setMenuOpen((open) => !open)}>
@@ -1714,16 +1739,14 @@ export default function App() {
             </div>
           </div>
         </header>
-
         {session.demo && (
           <div className="demo-banner">
-            <span>☁</span>
             Bạn đang dùng chế độ thử nghiệm. Không dùng cho dữ liệu nhạy cảm.
           </div>
         )}
         {!config.emailConfigured && (
           <div className="subtle-warning">
-            ✉ Email nhắc hạn chưa bật · thêm BREVO_API_KEY hoặc Gmail App Password
+            Email nhắc hạn chưa bật · thêm BREVO_API_KEY hoặc Gmail App Password
           </div>
         )}
         {loadError && (
@@ -1743,60 +1766,46 @@ export default function App() {
         <section className="page-heading">
           <div>
             <span className="eyebrow">{todayLabel}</span>
-            <h1>
-              Tiến độ của nhóm <span className="heading-sparkle">✿</span>
-            </h1>
-            <p>Chậm rãi một chút, cùng nhau đi thật xa.</p>
+            <h1>{mainTab === "board" ? "Bảng việc nhóm" : mainTab === "stats" ? "Thống kê dự án" : "Thành viên nhóm"}</h1>
+            <p>{activeWorkspace.name}</p>
           </div>
-          <CatPencilSticker className="heading-cat-sticker" />
-          <button
-            className="button primary create-button"
-            onClick={() => setModalTask("new")}
-          >
-            <span>＋</span>Tạo nhiệm vụ
-          </button>
+          {mainTab === "board" && (
+            <button className="button primary create-button" onClick={() => setModalTask("new")}>
+              Tạo nhiệm vụ
+            </button>
+          )}
         </section>
 
-        <section className="stats-row" aria-label="Tổng quan tiến độ">
-          <article className="stat-card">
-            <div className="stat-icon blue">▦</div>
-            <div>
-              <small>Tổng nhiệm vụ</small>
-              <strong>{tasks.length}</strong>
-            </div>
-            <span className="stat-note">Trong dự án</span>
-          </article>
-          <article className="stat-card">
-            <div className="stat-icon sky">◷</div>
-            <div>
-              <small>Đang thực hiện</small>
-              <strong>{activeCount}</strong>
-            </div>
-            <span className="stat-note">Cùng cố gắng</span>
-          </article>
-          <article className="stat-card">
-            <div className="stat-icon mint">✓</div>
-            <div>
-              <small>Đã hoàn thành</small>
-              <strong>{doneCount}</strong>
-            </div>
-            <span className="stat-note">
-              {tasks.length ? `${Math.round((doneCount / tasks.length) * 100)}% tổng việc` : "Bắt đầu thôi"}
-            </span>
-          </article>
-          <article className="stat-card">
-            <div className="stat-icon peach">☼</div>
-            <div>
-              <small>Sắp đến hạn</small>
-              <strong>{dueSoonCount}</strong>
-            </div>
-            <span className="stat-note">Trong 24 giờ</span>
-          </article>
-        </section>
+        <nav className="workspace-tabs" role="tablist" aria-label="Khu vực workspace">
+          {([
+            ["board", "Bảng việc"],
+            ["stats", "Thống kê"],
+            ["members", "Thành viên"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              id={`workspace-tab-${key}`}
+              className={`workspace-tab ${mainTab === key ? "active" : ""}`}
+              role="tab"
+              aria-selected={mainTab === key}
+              aria-controls={`workspace-panel-${key}`}
+              onClick={() => setMainTab(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
 
-        <section className="board-toolbar">
+        {loading ? (
+          <div className="loading-state">
+            <div className="spinner" />
+            <p>Đang tải dữ liệu nhóm...</p>
+          </div>
+        ) : mainTab === "board" ? (
+          <div id="workspace-panel-board" role="tabpanel" aria-labelledby="workspace-tab-board">
+          <section className="board-toolbar">
           <div className="toolbar-title">
-            <h2>Bảng công việc</h2>
+            <h2>{view === "board" ? "Bảng công việc" : "Danh sách công việc"}</h2>
             <span>{filteredTasks.length} nhiệm vụ</span>
           </div>
           <div className="toolbar-controls">
@@ -1841,26 +1850,17 @@ export default function App() {
               </button>
             </div>
           </div>
-        </section>
+          </section>
 
-        {loading ? (
-          <div className="loading-state">
-            <div className="spinner" />
-            <p>Đang gom những việc cần làm...</p>
-          </div>
-        ) : view === "board" ? (
+          {view === "board" ? (
           <section className="kanban-board" aria-label="Bảng Kanban">
             {statuses.map((status) => {
               const columnTasks = filteredTasks.filter((task) => task.status === status.key);
               return (
                 <div className={`kanban-column column-${status.key.toLowerCase()}`} key={status.key}>
                   <div className="column-heading">
-                    <span className={`column-icon ${status.key.toLowerCase()}`}>{status.icon}</span>
                     <h3>{status.label}</h3>
                     <span className="column-count">{columnTasks.length}</span>
-                    <span className="column-sticker" aria-hidden="true">
-                      {status.key === "DONE" ? "🌟" : status.key === "REVIEW" ? "🧸" : status.key === "IN_PROGRESS" ? "🐣" : "☁️"}
-                    </span>
                     <button
                       aria-label={`Tạo nhiệm vụ ${status.label}`}
                       onClick={() => setModalTask("new")}
@@ -1899,12 +1899,6 @@ export default function App() {
                 key={task.id}
                 onClick={() => setDetailTaskId(task.id)}
               >
-                <span
-                  className={`column-icon ${task.status.toLowerCase()}`}
-                  aria-hidden="true"
-                >
-                  {statuses.find((item) => item.key === task.status)?.icon}
-                </span>
                 <strong>{task.title}</strong>
                 <span>{statuses.find((item) => item.key === task.status)?.label}</span>
                 <span>{memberLabel(members.find((member) => member.id === task.assigneeId))}</span>
@@ -1925,10 +1919,176 @@ export default function App() {
             )}
           </section>
         )}
+        </div>
+        ) : mainTab === "stats" ? (
+          <div id="workspace-panel-stats" className="stats-dashboard" role="tabpanel" aria-labelledby="workspace-tab-stats">
+            <section className="stats-top-grid">
+              <article className="data-panel progress-panel">
+                <header className="panel-heading">
+                  <h2>Tiến độ dự án</h2>
+                  <span>{tasks.length} đầu việc</span>
+                </header>
+                <div className="progress-summary">
+                  <div
+                    className="progress-donut"
+                    role="img"
+                    aria-label={`${completionPercent}% hoàn thành`}
+                    style={{
+                      background: `conic-gradient(#2f855a 0% ${completionPercent}%, #e8edf0 ${completionPercent}% 100%)`,
+                    }}
+                  >
+                    <div className="progress-donut-center">
+                      <strong>{completionPercent}%</strong>
+                      <span>hoàn thành</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="status-legend">
+                  {statuses.map((status) => {
+                    const count = tasks.filter((task) => task.status === status.key).length;
+                    return (
+                      <div className={`legend-item legend-${status.key.toLowerCase()}`} key={status.key}>
+                        <span className="legend-dot" />
+                        <span>{status.label}</span>
+                        <strong>{count}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+              <section className="stats-kpi-grid" aria-label="Chỉ số dự án">
+                {[
+                  ["Tổng đầu việc", tasks.length, ""],
+                  ["Đã hoàn thành", doneCount, ""],
+                  ["Đang chờ duyệt", reviewCount, ""],
+                  ["Trễ hạn", overdueTasks.length, "kpi-overdue"],
+                  ["Sắp đến hạn (24h)", dueSoonCount, ""],
+                  ["Chưa giao", unassignedCount, ""],
+                ].map(([label, count, className]) => (
+                  <article className={`kpi-card ${className}`} key={label}>
+                    <span>{label}</span>
+                    <strong>{count}</strong>
+                  </article>
+                ))}
+              </section>
+            </section>
+            <section className="stats-bottom-grid">
+              <article className="data-panel contribution-panel">
+                <header className="panel-heading">
+                  <h2>Đóng góp từng thành viên</h2>
+                  <span>{members.length} thành viên</span>
+                </header>
+                <div className="contribution-list">
+                  {memberContributions.map(({ member, assigned, completed, contribution, role }) => (
+                    <div className="contribution-row" key={member.id}>
+                      <Avatar member={member} size="small" />
+                      <div className="contribution-member">
+                        <strong>{member.name}</strong>
+                        <small>{role}</small>
+                      </div>
+                      <span className="contribution-count">{completed} / {assigned} xong</span>
+                      <strong className="contribution-percent">{contribution}%</strong>
+                    </div>
+                  ))}
+                  {members.length === 0 && <p className="empty-note">Chưa có thành viên.</p>}
+                </div>
+              </article>
+              <article className="data-panel attention-panel">
+                <header className="panel-heading">
+                  <h2>Cần chú ý</h2>
+                  <span>{attentionTasks.length} nhiệm vụ</span>
+                </header>
+                <div className="attention-list">
+                  {attentionTasks.map((task) => {
+                    const remaining = Date.parse(task.deadline) - statsNow;
+                    const warning = remaining < 0
+                      ? `Trễ ${Math.max(1, Math.ceil(Math.abs(remaining) / 86_400_000))} ngày`
+                      : `Còn ${Math.max(1, Math.ceil(remaining / 3_600_000))} giờ`;
+                    return (
+                      <button
+                        className={`attention-row ${remaining < 0 ? "overdue" : ""}`}
+                        key={task.id}
+                        onClick={() => setDetailTaskId(task.id)}
+                      >
+                        <span className="attention-task">
+                          <strong>{task.title}</strong>
+                          <small>{members.find((member) => member.id === task.assigneeId)?.name || "Chưa giao"}</small>
+                        </span>
+                        <span className="attention-badge">{warning}</span>
+                      </button>
+                    );
+                  })}
+                  {attentionTasks.length === 0 && <p className="empty-note">Không có nhiệm vụ cần chú ý.</p>}
+                </div>
+              </article>
+            </section>
+          </div>
+        ) : (
+          <div id="workspace-panel-members" className="members-page" role="tabpanel" aria-labelledby="workspace-tab-members">
+            <section className="data-panel invite-panel">
+              <div>
+                <span className="panel-overline">MÃ MỜI NHÓM</span>
+                <strong className="invite-code">{activeWorkspace.inviteCode}</strong>
+              </div>
+              <button className="button secondary" onClick={() => void copyInviteCode(activeWorkspace.inviteCode)}>
+                Sao chép mã
+              </button>
+            </section>
+            <section className="data-panel member-management">
+              <header className="panel-heading">
+                <div>
+                  <h2>Thành viên</h2>
+                  <p>{members.length} thành viên trong nhóm</p>
+                </div>
+              </header>
+              <form className="member-add-form" onSubmit={addMember}>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={memberEmail}
+                    onChange={(event) => setMemberEmail(event.target.value)}
+                    placeholder="email@congty.com"
+                    required
+                  />
+                </label>
+                <label>
+                  Tên hiển thị
+                  <input
+                    value={memberName}
+                    onChange={(event) => setMemberName(event.target.value)}
+                    placeholder="Tự lấy từ email nếu để trống"
+                    maxLength={80}
+                  />
+                </label>
+                <button className="button primary" type="submit" disabled={busy}>
+                  {busy ? "Đang thêm..." : "Thêm thành viên"}
+                </button>
+              </form>
+              <div className="member-table" role="table" aria-label="Danh sách thành viên">
+                <div className="member-table-header" role="row">
+                  <span>Thành viên</span><span>Vai trò</span><span>Email</span><span>Đầu việc</span>
+                </div>
+                {memberContributions.map(({ member, assigned, completed, role }) => (
+                  <div className="member-table-row" role="row" key={member.id}>
+                    <div className="member-name-cell">
+                      <Avatar member={member} size="small" />
+                      <strong>{member.name}</strong>
+                    </div>
+                    <span>{role}</span>
+                    <span className="member-email">{member.email}</span>
+                    <span>{assigned} tổng · {completed} xong</span>
+                  </div>
+                ))}
+                {members.length === 0 && <p className="empty-note">Chưa có thành viên.</p>}
+              </div>
+            </section>
+          </div>
+        )}
 
         <footer className="page-footer">
-          <span>☁ Đang đồng bộ theo thời gian thực</span>
-          <span><i /> Đã lưu mọi thay đổi</span>
+          <span>Đang đồng bộ theo thời gian thực</span>
+          <span>Đã lưu mọi thay đổi</span>
         </footer>
       </main>
 
