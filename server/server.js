@@ -26,9 +26,10 @@ const mongoStoreId = "nhip-nhom-store";
 const port = Number(process.env.PORT || 4000);
 const demoMode = process.env.DEMO_MODE !== "false";
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
-const geminiModel = ["gemini-2.5-flash", "gemini-2.0-flash"].includes(process.env.GEMINI_MODEL)
-  ? process.env.GEMINI_MODEL
-  : "gemini-2.5-flash";
+const configuredGeminiModel = process.env.GEMINI_MODEL?.trim() || "";
+const geminiModel = /^gemini-[a-zA-Z0-9.-]+$/.test(configuredGeminiModel)
+  ? configuredGeminiModel
+  : "gemini-3.8-flash";
 const memberStrengthOptions = [
   "Lên ý tưởng & Kịch bản",
   "Viết nội dung & Báo cáo",

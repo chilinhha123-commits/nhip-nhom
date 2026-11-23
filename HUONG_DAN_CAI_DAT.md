@@ -85,7 +85,7 @@ Nếu chưa cấu hình email, ứng dụng vẫn chạy bình thường và bá
 
 ## 5. AI lập kế hoạch & phân công
 
-Thêm `GEMINI_API_KEY` vào `.env` khi chạy cục bộ hoặc vào **Render → Web Service → Environment** khi triển khai. API key chỉ được dùng ở backend, không đưa vào frontend hay commit vào Git. Mặc định ứng dụng gọi `gemini-2.5-flash`; có thể đặt `GEMINI_MODEL=gemini-2.0-flash` để chọn model khác.
+Thêm `GEMINI_API_KEY` vào `.env` khi chạy cục bộ hoặc vào **Render → Web Service → Environment** khi triển khai. API key chỉ được dùng ở backend, không đưa vào frontend hay commit vào Git. Mặc định ứng dụng gọi `gemini-3.8-flash`; có thể đặt `GEMINI_MODEL` thành model Gemini khác để đổi model.
 
 Trong tab **Thành viên**, mỗi thành viên hoặc trưởng nhóm có thể cập nhật thẻ điểm mạnh và ghi chú ngắn. Hồ sơ được lưu riêng theo workspace trong MongoDB `nhip_nhom` (hoặc `store.json` nếu đang dùng chế độ fallback). Ở tab **Bảng việc**, nút **AI lập kế hoạch** tạo bản nháp từ mô tả dự án, sở trường và số việc chưa hoàn thành của thành viên. Hãy xem lại/chỉnh sửa kế hoạch trước khi áp dụng; các nhiệm vụ được lưu qua API tạo nhiệm vụ hiện có.
 
@@ -100,7 +100,7 @@ Trong Render Dashboard, mở **Web Service → Environment** rồi thêm các bi
 | `GMAIL_APP_PASSWORD` | App Password Gmail dùng làm SMTP dự phòng |
 | `MONGODB_URI` | MongoDB Atlas connection string; database `nhip_nhom` |
 | `GEMINI_API_KEY` | Google AI Studio API key dùng lập kế hoạch ở backend |
-| `GEMINI_MODEL` | *(không bắt buộc)* `gemini-2.5-flash` hoặc `gemini-2.0-flash` |
+| `GEMINI_MODEL` | *(không bắt buộc)* `gemini-3.8-flash` |
 
 Sau khi thêm biến, nhấn **Save Changes** để Render triển khai lại dịch vụ. Các biến tùy chọn khác vẫn có thể cấu hình như `GOOGLE_CLIENT_ID`, `DEMO_MODE`, `CLIENT_ORIGIN` và `PORT`. Máy chủ kiểm tra hạn nhiệm vụ khi khởi động và sau đó mỗi phút; nó lưu `remindersSent` trong kho dữ liệu đang cấu hình để không gửi trùng.
 
@@ -140,6 +140,6 @@ Các biến môi trường có trong `.env.example`:
 | `GMAIL_APP_PASSWORD` | *(trống)* | App Password Gmail dùng SMTP dự phòng |
 | `SMTP_PORT` | `587` | Cổng Gmail SMTP; dùng `465` để bật SMTPS hoặc `587` để dùng STARTTLS |
 | `GEMINI_API_KEY` | *(trống)* | Google AI Studio API key; chỉ dùng từ backend |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Model Gemini (`gemini-2.5-flash` hoặc `gemini-2.0-flash`) |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | Model Gemini; có thể đặt model Gemini khác |
 
 Khi cấu hình `MONGODB_URI`, thông tin tài khoản, workspace và nhiệm vụ lưu trong MongoDB Atlas; nếu không, ứng dụng dùng file JSON cục bộ. Tệp tải lên vẫn nằm trong `server/uploads/`. Chế độ demo không xác minh danh tính email, chỉ nên dùng để thử nghiệm cục bộ. Khi triển khai công khai, hãy cấu hình HTTPS, sao lưu dữ liệu và bảo vệ tệp `.env`/thư mục uploads.
