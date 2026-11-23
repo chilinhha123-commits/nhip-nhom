@@ -513,6 +513,7 @@ app.get("/api/config", (req, res) => {
     demoMode,
     emailConfigured: Boolean(process.env.BREVO_API_KEY
       || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)),
+    gmailConfigured: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
   });
 });
 
@@ -655,7 +656,41 @@ app.post("/api/workspaces/:workspaceId/notifications", authenticate, asyncRoute(
   workspace.notifications = workspace.notifications.slice(0, 100);
   await saveStore();
   io.to(`workspace:${workspace.id}`).emit("workspace:notification", notification);
-  res.status(201).json(notification);
+
+  const recipients = [...new Set(workspaceMembers(workspace)
+    .map((member) => member.email)
+    .filter((email) => typeof email === "string" && isValidEmail(email))
+    .map((email) => normalizeEmail(email)))];
+  const appBaseUrl = (req.get("origin")
+    || process.env.CLIENT_ORIGIN
+    || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+  const appUrl = `${appBaseUrl}/`;
+  const safeMessage = escapeHtml(message).replace(/\r?\n/g, "<br>");
+  const safeSender = escapeHtml(notification.senderName);
+  const safeWorkspace = escapeHtml(workspace.name);
+  const html = `<div style="margin:0;padding:32px 16px;background:#f6faf7;font-family:Arial,sans-serif;color:#132a1e"><div style="max-width:560px;margin:0 auto;padding:28px;border:1px solid #dcfce7;border-radius:16px;background:#ffffff"><p style="margin:0 0 8px;color:#15803d;font-size:12px;font-weight:bold;letter-spacing:1px">NHỊP NHÓM · ${safeWorkspace}</p><h1 style="margin:0 0 18px;font-size:22px">Lời nhắc nhẹ nhàng từ nhóm</h1><div style="padding:16px;border-radius:10px;background:#f0fdf4;color:#1f2937;font-size:16px;line-height:1.6">${safeMessage}</div><p style="margin:18px 0 20px;color:#4b5563;font-size:14px">Người gửi: <strong style="color:#166534">${safeSender}</strong></p><a href="${escapeHtml(appUrl)}" style="display:inline-block;padding:11px 16px;border-radius:8px;background:#15803d;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold">Mở bảng việc nhóm</a></div></div>`;
+  const text = `Lời nhắc nhẹ nhàng từ nhóm ${workspace.name}\n\n${message}\n\nNgười gửi: ${notification.senderName}\n\nMở bảng việc nhóm: ${appUrl}`;
+  let emailResult;
+  try {
+    emailResult = await sendMail(
+      "[Nhịp Nhóm] Lời nhắc nhẹ nhàng từ nhóm của bạn",
+      text,
+      recipients,
+      { detailed: true, html, forceGmail: true },
+    );
+  } catch (error) {
+    console.error(`Không gửi được email lời nhắc workspace ${workspace.id}:`, error);
+    emailResult = {
+      emailSentCount: 0,
+      emailError: "Lời nhắc đã được lưu, nhưng gặp lỗi khi gửi email. Hãy xem nhật ký máy chủ.",
+    };
+  }
+  res.status(201).json({
+    ...notification,
+    emailRecipientCount: recipients.length,
+    emailSentCount: emailResult.emailSentCount,
+    emailError: emailResult.emailError,
+  });
 }));
 
 app.post("/api/workspaces/:workspaceId/ai-plan", authenticate, asyncRoute(async (req, res) => {
@@ -861,24 +896,30 @@ function emailRecipients(task, workspace) {
     .map((email) => normalizeEmail(email)))];
 }
 
-async function sendMail(subject, text, recipients) {
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function sendMail(subject, text, recipients, options = {}) {
+  const detailed = options.detailed === true;
   const normalizedRecipients = [...new Set(recipients
     .filter((email) => typeof email === "string" && isValidEmail(email))
     .map((email) => normalizeEmail(email)))];
   if (normalizedRecipients.length === 0) {
     console.warn(`Email: không có người nhận hợp lệ cho "${subject}".`);
-    return ["Không gửi được email: nhiệm vụ không có địa chỉ người nhận hợp lệ."];
+    const error = "Không gửi được email: workspace không có địa chỉ người nhận hợp lệ.";
+    return detailed ? { emailSentCount: 0, emailError: error } : [error];
   }
 
   let failures = 0;
-  if (process.env.BREVO_API_KEY) {
-    const htmlContent = text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;")
-      .replace(/\r?\n/g, "<br>");
+  let sentCount = 0;
+  if (process.env.BREVO_API_KEY && options.forceGmail !== true) {
+    const htmlContent = options.html || escapeHtml(text).replace(/\r?\n/g, "<br>");
     for (const recipientEmail of normalizedRecipients) {
       try {
         const response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -900,6 +941,7 @@ async function sendMail(subject, text, recipients) {
           console.error(`Brevo: gửi "${subject}" tới ${recipientEmail} thất bại (HTTP ${response.status}): ${details}`);
           continue;
         }
+        sentCount += 1;
         console.log(`Brevo: gửi thành công "${subject}" tới ${recipientEmail}.`);
       } catch (error) {
         failures += 1;
@@ -908,8 +950,11 @@ async function sendMail(subject, text, recipients) {
     }
   } else {
     if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      const error = options.forceGmail
+        ? "Email chưa được gửi: hãy cấu hình GMAIL_USER và GMAIL_APP_PASSWORD."
+        : "Email chưa được gửi: hãy cấu hình BREVO_API_KEY hoặc Gmail App Password.";
       console.error(`SMTP fallback: chưa gửi "${subject}" vì thiếu GMAIL_USER hoặc GMAIL_APP_PASSWORD.`);
-      return ["Email chưa được gửi: hãy cấu hình BREVO_API_KEY hoặc Gmail App Password."];
+      return detailed ? { emailSentCount: 0, emailError: error } : [error];
     }
     const smtpPort = Number(process.env.SMTP_PORT || "587");
     const secure = smtpPort === 465;
@@ -926,12 +971,15 @@ async function sendMail(subject, text, recipients) {
 
     for (const recipientEmail of normalizedRecipients) {
       try {
-        await transporter.sendMail({
+        const mail = {
           from: `"Nhịp Nhóm" <${process.env.GMAIL_USER}>`,
           to: recipientEmail,
           subject,
           text,
-        });
+        };
+        if (options.html) mail.html = options.html;
+        await transporter.sendMail(mail);
+        sentCount += 1;
         console.log(`SMTP fallback: gửi thành công "${subject}" tới ${recipientEmail}.`);
       } catch (error) {
         failures += 1;
@@ -942,9 +990,12 @@ async function sendMail(subject, text, recipients) {
     }
   }
 
-  return failures
-    ? [`Không gửi được email tới ${failures} thành viên; xem log dịch vụ email.`]
-    : [];
+  const emailError = failures
+    ? `Không gửi được email tới ${failures} thành viên; xem log dịch vụ email.`
+    : null;
+  return detailed
+    ? { emailSentCount: sentCount, emailError }
+    : emailError ? [emailError] : [];
 }
 
 function taskMailText(task, workspace, prefix) {

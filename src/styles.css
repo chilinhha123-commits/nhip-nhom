@@ -4920,9 +4920,32 @@ body {
   font-size: 10px;
 }
 
+.notification-email-warning {
+  margin: 8px 0 0;
+  color: #92400e;
+  font-size: 11px;
+}
+
 .notification-form {
   display: grid;
   gap: 10px;
+}
+
+.notification-send-result {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  color: #166534;
+  background: #f0fdf4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notification-send-result.is-error {
+  border-color: #fcd34d;
+  color: #92400e;
+  background: #fffbeb;
 }
 
 .notification-form > label:not(.notification-anonymous) {

@@ -44,6 +44,9 @@ type GroupNotification = {
   senderName: string;
   senderId: string | null;
   createdAt: string;
+  emailRecipientCount?: number;
+  emailSentCount?: number;
+  emailError?: string | null;
 };
 
 type Task = {
@@ -68,6 +71,7 @@ type Config = {
   googleClientId: string;
   demoMode: boolean;
   emailConfigured: boolean;
+  gmailConfigured: boolean;
 };
 
 type UserSession = {
@@ -1505,7 +1509,7 @@ function GroupNotificationsPanel({
   notifications,
   loading,
   loadError,
-  emailConfigured,
+  gmailConfigured,
   onClose,
   onSent,
 }: {
@@ -1514,7 +1518,7 @@ function GroupNotificationsPanel({
   notifications: GroupNotification[];
   loading: boolean;
   loadError: string;
-  emailConfigured: boolean;
+  gmailConfigured: boolean;
   onClose: () => void;
   onSent: (notification: GroupNotification) => void;
 }) {
@@ -1523,6 +1527,8 @@ function GroupNotificationsPanel({
   const [anonymous, setAnonymous] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [confirmationError, setConfirmationError] = useState(false);
 
   async function sendReminder(event: FormEvent) {
     event.preventDefault();
@@ -1532,13 +1538,20 @@ function GroupNotificationsPanel({
     }
     setSending(true);
     setError("");
+    setConfirmation("");
+    setConfirmationError(false);
     try {
       const saved = await api<GroupNotification>(
         `/api/workspaces/${workspaceId}/notifications`,
         session,
         { method: "POST", body: JSON.stringify({ message: message.trim(), anonymous }) },
+        60_000,
       );
       onSent(saved);
+      setConfirmationError(Boolean(saved.emailError));
+      setConfirmation(saved.emailError
+        ? `Đã lưu lời nhắc và gửi email tới ${saved.emailSentCount ?? 0}/${saved.emailRecipientCount ?? 0} thành viên. ${saved.emailError}`
+        : `Đã lưu lời nhắc và gửi email tới ${saved.emailSentCount ?? 0} thành viên!`);
       setMessage("");
       setSelectedTemplate("custom");
     } catch (sendError) {
@@ -1569,10 +1582,11 @@ function GroupNotificationsPanel({
         <section className="notification-compose">
           <div className="notification-section-heading">
             <h3>Gửi lời nhắc nhẹ nhàng tới cả nhóm</h3>
-            <p>{emailConfigured
-              ? "Email nhắc hạn tự động đang được cấu hình riêng."
-              : "Email nhắc hạn chưa bật; lời nhắc trong nhóm vẫn hoạt động."}</p>
+            <p>Sẽ gửi thông báo qua Email tới toàn bộ thành viên</p>
           </div>
+          {!gmailConfigured && (
+            <p className="notification-email-warning">Email chưa được cấu hình; lời nhắc vẫn sẽ được lưu trong nhóm.</p>
+          )}
           <form className="notification-form" onSubmit={sendReminder}>
             <label>
               Mẫu lời nhắn
@@ -1613,6 +1627,11 @@ function GroupNotificationsPanel({
               <span>Gửi ẩn danh <small>(hiển thị là “Một thành viên trong nhóm”)</small></span>
             </label>
             {(error || loadError) && <p className="inline-error">{error || loadError}</p>}
+            {confirmation && (
+              <p className={`notification-send-result${confirmationError ? " is-error" : ""}`} role="status">
+                {confirmation}
+              </p>
+            )}
             <button type="submit" className="button primary" disabled={sending || !message.trim()}>
               {sending ? "Đang gửi..." : "Gửi thông báo cho mọi người"}
             </button>
@@ -1655,6 +1674,7 @@ export default function App() {
     googleClientId: "",
     demoMode: true,
     emailConfigured: false,
+    gmailConfigured: false,
   });
   const [session, setSession] = useState<UserSession | null>(getStoredUser);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -2747,11 +2767,13 @@ export default function App() {
           notifications={notifications}
           loading={notificationsLoading}
           loadError={notificationsLoadError}
-          emailConfigured={config.emailConfigured}
+          gmailConfigured={config.gmailConfigured}
           onClose={() => setShowNotifications(false)}
           onSent={(notification) => {
             setNotifications((current) => mergeNotifications(current, [notification]));
-            setNotice("Đã gửi lời nhắc cho cả nhóm.");
+            setNotice(notification.emailError
+              ? `Đã lưu lời nhắc; gửi email tới ${notification.emailSentCount ?? 0}/${notification.emailRecipientCount ?? 0} thành viên.`
+              : `Đã lưu lời nhắc và gửi email tới ${notification.emailSentCount ?? 0} thành viên!`);
           }}
         />
       )}
