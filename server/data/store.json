@@ -1,4 +1,11 @@
 {
-  "users": [],
+  "users": [
+    {
+      "id": "user-7462108984f629db2ced1aeb",
+      "name": "demo",
+      "email": "demo@example.com",
+      "color": "#7357d9"
+    }
+  ],
   "workspaces": []
 }
