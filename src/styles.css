@@ -4527,6 +4527,16 @@ body {
   font-size: 10px;
 }
 
+.ai-fallback-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #374151;
+  background: #f9fafb;
+  font-size: 11px;
+}
+
 .ai-plan-task {
   display: grid;
   gap: 10px;

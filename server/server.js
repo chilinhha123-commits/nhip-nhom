@@ -180,35 +180,169 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
-async function requestGemini(model, apiKey, prompt) {
-  async function sendRequest() {
-    try {
-      return await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-          signal: AbortSignal.timeout(45_000),
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
-          }),
-        },
-      );
-    } catch (error) {
-      const details = error instanceof Error ? error.message : String(error);
-      throw new Error(`Lỗi kết nối Gemini (${model}): ${details}`);
+async function requestGemini(model, apiKey, prompt, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+        }),
+      },
+    );
+    const responseText = await response.text();
+    if (controller.signal.aborted) {
+      throw new Error(`Gemini ${model} quá thời gian ${timeoutMs / 1_000} giây.`);
     }
+    return { response, responseText };
+  } catch (error) {
+    const details = controller.signal.aborted
+      ? `Gemini ${model} quá thời gian ${timeoutMs / 1_000} giây.`
+      : error instanceof Error ? error.message : String(error);
+    throw new Error(`Lỗi gọi Gemini (${model}): ${details}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function createLocalFallbackPlan(description, mode, members, workload) {
+  const normalized = description.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const has = (...terms) => terms.some((term) => normalized.includes(term));
+  const tasks = [];
+  const add = (title, taskDescription, priority, categories) => {
+    tasks.push({ title, description: taskDescription, priority, categories });
+  };
+  const specialized = [];
+
+  if (has("video", "quay", "dung phim", "dung video")) {
+    specialized.push({
+      title: "Xây dựng kịch bản và phân cảnh video",
+      description: "Chốt thông điệp, nội dung, lời dẫn và phân cảnh trước khi quay.",
+      priority: "MEDIUM",
+      categories: ["ideas", "writing", "video"],
+    }, {
+      title: "Quay, dựng và hoàn thiện video",
+      description: "Tổ chức quay, dựng bản nháp, rà âm thanh/hình ảnh và xuất bản cuối.",
+      priority: "HIGH",
+      categories: ["video", "design"],
+    });
+  }
+  if (has("thuyet trinh", "trinh bay", "presentation", "slide")) {
+    specialized.push({
+      title: "Chuẩn bị nội dung và slide thuyết trình",
+      description: "Chắt lọc thông điệp, sắp xếp mạch trình bày và thiết kế slide.",
+      priority: "MEDIUM",
+      categories: ["presentation", "writing", "design"],
+    });
+  }
+  if (has("nghien cuu", "research", "khao sat", "phan tich")) {
+    specialized.push({
+      title: "Nghiên cứu thông tin và tổng hợp kết quả",
+      description: "Thu thập nguồn tin đáng tin cậy, phân tích dữ liệu và ghi lại kết luận.",
+      priority: "HIGH",
+      categories: ["research", "writing", "coordination"],
+    });
+  }
+  if (has("thiet ke", "hinh anh", "giao dien", "mockup", "visual")) {
+    specialized.push({
+      title: "Thiết kế hình ảnh và rà soát nhận diện",
+      description: "Tạo phương án hình ảnh phù hợp yêu cầu, thống nhất phong cách và kiểm tra đầu ra.",
+      priority: "MEDIUM",
+      categories: ["design", "ideas"],
+    });
+  }
+  if (has("bao cao", "report", "bai viet", "noi dung")) {
+    specialized.push({
+      title: "Soạn nội dung và hoàn thiện báo cáo",
+      description: "Viết các phần chính, kiểm chứng thông tin và biên tập bản hoàn chỉnh.",
+      priority: "MEDIUM",
+      categories: ["writing", "research"],
+    });
+  }
+  if (has("san pham", "ky thuat", "ung dung", "website", "prototype", "lap trinh")) {
+    specialized.push({
+      title: "Xây dựng sản phẩm và kiểm thử chức năng",
+      description: "Triển khai phần cốt lõi, kiểm thử các luồng chính và ghi nhận lỗi cần sửa.",
+      priority: "HIGH",
+      categories: ["technical", "design"],
+    });
+  }
+  if (has("su kien", "event", "chuong trinh", "workshop")) {
+    specialized.push({
+      title: "Điều phối nội dung và vận hành sự kiện",
+      description: "Lập kịch bản vận hành, phân công đầu mối và kiểm tra các hạng mục trước sự kiện.",
+      priority: "HIGH",
+      categories: ["coordination", "presentation", "ideas"],
+    });
+  }
+  if (specialized.length === 0) {
+    specialized.push({
+      title: "Thực hiện sản phẩm chính theo yêu cầu",
+      description: "Hoàn thành phần nội dung hoặc sản phẩm trọng tâm được nêu trong mô tả.",
+      priority: "HIGH",
+      categories: ["technical", "writing", "design"],
+    });
   }
 
-  let response = await sendRequest();
-  if (response.status === 503) {
-    console.warn(`Gemini ${model} HTTP 503; thử lại một lần sau 2.5s.`);
-    await response.body?.cancel().catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
-    response = await sendRequest();
+  add("Phân tích yêu cầu và thống nhất kế hoạch", "Chốt mục tiêu, phạm vi, tiêu chí hoàn thành và các mốc phối hợp.", "HIGH", ["coordination", "ideas"]);
+  tasks.push(...specialized.slice(0, 3));
+  add("Kiểm tra chất lượng và rà soát nội dung", "Đối chiếu kết quả với yêu cầu, sửa lỗi và thống nhất phiên bản cuối.", "MEDIUM", ["coordination", "writing", "technical"]);
+  add("Hoàn thiện và bàn giao sản phẩm", "Chuẩn bị tệp, tài liệu hoặc phần trình bày cần nộp và xác nhận hoàn tất.", "MEDIUM", ["coordination", "presentation", "writing"]);
+
+  const skillCategories = [
+    ["len y tuong", ["ideas", "coordination"]],
+    ["kich ban", ["ideas", "writing", "video"]],
+    ["viet noi dung", ["writing", "research"]],
+    ["bao cao", ["writing", "research"]],
+    ["thiet ke", ["design", "ideas"]],
+    ["hinh anh", ["design"]],
+    ["quay", ["video"]],
+    ["dung video", ["video", "design"]],
+    ["san pham", ["technical"]],
+    ["ky thuat", ["technical"]],
+    ["thuyet trinh", ["presentation"]],
+    ["tong hop", ["coordination", "research", "writing"]],
+    ["dieu phoi", ["coordination"]],
+  ];
+
+  const assignments = [];
+  for (const task of tasks) {
+    const ranked = members.map((member) => {
+      const strengths = (member.strengths || []).map((strength) =>
+        strength.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+      const matches = strengths.reduce((score, strength) => {
+        const categories = skillCategories.find(([key]) => strength.includes(key))?.[1] || [];
+        return score + (categories.some((category) => task.categories.includes(category)) ? 1 : 0);
+      }, 0);
+      return { member, matches, load: workload.get(member.id) || 0 };
+    });
+    ranked.sort((left, right) => mode === "strength_first"
+      ? right.matches - left.matches || left.load - right.load
+      : left.load - right.load || right.matches - left.matches);
+
+    const hasStrengthMatch = ranked.some((candidate) => candidate.matches > 0);
+    const teamSize = members.length > 1 && (task.priority === "HIGH" || !hasStrengthMatch) ? 2 : 1;
+    const assigned = ranked.slice(0, teamSize).map(({ member }) => member);
+    for (const member of assigned) workload.set(member.id, (workload.get(member.id) || 0) + 1);
+    assignments.push({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      deadline: null,
+      assigneeIds: assigned.map((member) => member.id),
+      assigneeNames: assigned.map((member) => member.name),
+      assignmentReason: mode === "strength_first"
+        ? "Ưu tiên điểm mạnh phù hợp; cân bằng người đang có ít việc hơn. Việc ưu tiên cao có người hỗ trợ."
+        : "Ưu tiên thành viên có ít việc chưa hoàn thành hơn; dùng điểm mạnh để chọn người hỗ trợ.",
+    });
   }
-  return response;
+  return { tasks: assignments.slice(0, 6) };
 }
 
 async function ensureWorkspaceInviteCodes() {
@@ -499,7 +633,6 @@ app.post("/api/workspaces/:workspaceId/ai-plan", authenticate, asyncRoute(async 
   const workspace = workspaceForUser(req.params.workspaceId, req.user);
   if (!workspace) return res.status(404).json({ error: "Không tìm thấy workspace." });
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) return res.status(503).json({ error: "Tính năng AI chưa được cấu hình. Hãy thêm GEMINI_API_KEY ở backend." });
 
   const projectDescription = typeof req.body?.projectDescription === "string"
     ? req.body.projectDescription.trim()
@@ -554,54 +687,53 @@ ${JSON.stringify(memberContext)}
 Đầu việc đã có trong workspace:
 ${JSON.stringify(existingTasks)}`;
 
-  let response;
-  try {
-    response = await requestGemini(geminiModel, apiKey, prompt);
-    if (response.status === 503 && geminiModel === "gemini-3.8-flash") {
-      console.warn("gemini-3.8-flash tiếp tục quá tải sau một lần thử lại; chuyển sang gemini-3.5-flash-lite.");
-      response = await requestGemini("gemini-3.5-flash-lite", apiKey, prompt);
-    }
-  } catch (error) {
-    console.error("Gọi Gemini API thất bại:", error);
-    const details = error instanceof Error ? error.message : String(error);
-    return res.status(502).json({ error: details || "Không thể kết nối Gemini." });
-  }
-
-  if (response.status === 429) {
-    return res.status(429).json({
-      error: "Hệ thống AI đang chạm giới hạn lượt dùng miễn phí trong phút này. Vui lòng đợi khoảng 60 giây rồi bấm lại 1 lần.",
-    });
-  }
-
-  const responseText = await response.text();
-  let geminiData;
-  try {
-    geminiData = JSON.parse(responseText);
-  } catch {
-    console.error(`Gemini trả về phản hồi không phải JSON (HTTP ${response.status}).`);
-    return res.status(502).json({ error: "Gemini trả về dữ liệu không hợp lệ. Vui lòng thử lại." });
-  }
-  if (!response.ok) {
-    const details = typeof geminiData.error?.message === "string"
-      ? geminiData.error.message
-      : `Gemini API trả về HTTP ${response.status}.`;
-    console.error(`Gemini API báo lỗi HTTP ${response.status}:`, details);
-    return res.status(502).json({ error: details });
-  }
-
-  const generatedText = geminiData.candidates?.[0]?.content?.parts
-    ?.map((part) => part.text || "")
-    .join("")
-    .trim();
   let plan;
-  try {
-    plan = JSON.parse(generatedText);
-  } catch {
-    console.error("Không phân tích được JSON kế hoạch từ Gemini.");
-    return res.status(502).json({ error: "Kế hoạch AI không đúng định dạng. Vui lòng tạo lại." });
+  let fallbackUsed = false;
+  const modelAttempts = apiKey
+    ? [[geminiModel, 8_000], ["gemini-3.5-flash-lite", 6_000]]
+    : [];
+  for (const [model, timeoutMs] of modelAttempts) {
+    try {
+      const { response, responseText } = await requestGemini(model, apiKey, prompt, timeoutMs);
+      let geminiData;
+      try {
+        geminiData = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Gemini ${model} trả về JSON không hợp lệ (HTTP ${response.status}).`);
+      }
+      if (!response.ok) {
+        const details = typeof geminiData.error?.message === "string"
+          ? geminiData.error.message
+          : `Gemini API trả về HTTP ${response.status}.`;
+        throw new Error(`Gemini ${model} HTTP ${response.status}: ${details}`);
+      }
+
+      const generatedText = geminiData.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || "")
+        .join("")
+        .trim();
+      try {
+        plan = JSON.parse(generatedText);
+      } catch {
+        throw new Error(`Gemini ${model} trả về kế hoạch không đúng định dạng JSON.`);
+      }
+      if (!Array.isArray(plan?.tasks) || !plan.tasks.some((item) =>
+        typeof item?.title === "string" && item.title.trim())) {
+        throw new Error(`Gemini ${model} không trả về danh sách đầu việc hợp lệ.`);
+      }
+      break;
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      console.warn(`Không dùng được Gemini ${model}: ${details}`);
+    }
   }
-  if (!Array.isArray(plan?.tasks)) {
-    return res.status(502).json({ error: "Kế hoạch AI thiếu danh sách đầu việc." });
+
+  if (!plan) {
+    console.warn(apiKey
+      ? "Cả hai model Gemini đều không khả dụng; tạo kế hoạch dự phòng tại chỗ."
+      : "Thiếu GEMINI_API_KEY; tạo kế hoạch dự phòng tại chỗ.");
+    plan = createLocalFallbackPlan(projectDescription, mode, members, workload);
+    fallbackUsed = true;
   }
 
   const memberById = new Map(members.map((member) => [member.id, member]));
@@ -650,7 +782,7 @@ ${JSON.stringify(existingTasks)}`;
   });
   if (!plannedTasks.length) return res.status(502).json({ error: "AI không đề xuất được đầu việc hợp lệ. Hãy mô tả rõ hơn." });
 
-  res.json({ tasks: plannedTasks });
+  res.json({ tasks: plannedTasks, fallbackUsed });
 }));
 
 function requireWorkspace(req, res, next) {

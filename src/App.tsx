@@ -787,6 +787,7 @@ function AIPlanModal({
   const [projectDescription, setProjectDescription] = useState("");
   const [mode, setMode] = useState<PlanMode>("strength_first");
   const [plan, setPlan] = useState<EditablePlanTask[]>([]);
+  const [fallbackUsed, setFallbackUsed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
@@ -795,8 +796,10 @@ function AIPlanModal({
     event?.preventDefault();
     setGenerating(true);
     setError("");
+    setPlan([]);
+    setFallbackUsed(false);
     try {
-      const result = await api<{ tasks: AIPlanTask[] }>(
+      const result = await api<{ tasks: AIPlanTask[]; fallbackUsed?: boolean }>(
         `/api/workspaces/${workspaceId}/ai-plan`,
         session,
         {
@@ -807,9 +810,10 @@ function AIPlanModal({
             existingTasks: tasks.slice(0, 100).map(({ title, status }) => ({ title, status })),
           }),
         },
-        520_000,
+        15_000,
       );
       setPlan(result.tasks.map((item) => ({ ...item, draftId: crypto.randomUUID() })));
+      setFallbackUsed(result.fallbackUsed === true);
     } catch (generateError) {
       setError(generateError instanceof Error ? generateError.message : "Không tạo được kế hoạch bằng AI.");
     } finally {
@@ -919,6 +923,9 @@ function AIPlanModal({
               <h3>Đề xuất · {plan.length} đầu việc</h3>
               <span>Chỉnh sửa trước khi đưa vào cột Cần làm</span>
             </div>
+            {fallbackUsed && (
+              <p className="ai-fallback-note">Đã tạo kế hoạch nhanh theo chế độ dự phòng.</p>
+            )}
             {plan.map((item, index) => (
               <article className="ai-plan-task" key={item.draftId}>
                 <header className="ai-plan-task-heading">
