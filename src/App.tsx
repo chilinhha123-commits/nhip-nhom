@@ -807,7 +807,7 @@ function AIPlanModal({
             existingTasks: tasks.slice(0, 100).map(({ title, status }) => ({ title, status })),
           }),
         },
-        60_000,
+        520_000,
       );
       setPlan(result.tasks.map((item) => ({ ...item, draftId: crypto.randomUUID() })));
     } catch (generateError) {

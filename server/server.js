@@ -180,6 +180,43 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
+async function requestGemini(model, apiKey, prompt) {
+  const retryDelays = [2_000, 4_000, 6_000, 8_000];
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          signal: AbortSignal.timeout(45_000),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+          }),
+        },
+      );
+    } catch (error) {
+      if (attempt === retryDelays.length) {
+        console.error(`Gemini ${model} lỗi mạng sau ${attempt} lần thử lại:`, error);
+        throw error;
+      }
+      const delay = retryDelays[attempt];
+      console.warn(`Gemini ${model} lỗi mạng; thử lại lần ${attempt + 1}/${retryDelays.length} sau ${delay / 1_000}s.`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+
+    if (response.status !== 503 || attempt === retryDelays.length) return response;
+    const delay = retryDelays[attempt];
+    console.warn(`Gemini ${model} HTTP 503; thử lại lần ${attempt + 1}/${retryDelays.length} sau ${delay / 1_000}s.`);
+    await response.body?.cancel().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  throw new Error(`Không nhận được phản hồi từ Gemini ${model}.`);
+}
+
 async function ensureWorkspaceInviteCodes() {
   const usedCodes = new Set();
   let changed = false;
@@ -525,18 +562,11 @@ ${JSON.stringify(existingTasks)}`;
 
   let response;
   try {
-    response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        signal: AbortSignal.timeout(45_000),
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
-        }),
-      },
-    );
+    response = await requestGemini(geminiModel, apiKey, prompt);
+    if (response.status === 503 && geminiModel === "gemini-3.8-flash") {
+      console.warn("gemini-3.8-flash tiếp tục quá tải sau các lần thử lại; chuyển sang gemini-2.5-flash-lite.");
+      response = await requestGemini("gemini-2.5-flash-lite", apiKey, prompt);
+    }
   } catch (error) {
     console.error("Gọi Gemini API thất bại:", error);
     return res.status(502).json({ error: "Không kết nối được Gemini. Vui lòng thử lại sau." });
