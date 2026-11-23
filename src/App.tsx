@@ -904,7 +904,12 @@ function AIPlanModal({
               </button>
             )}
             <button type="submit" className="button primary" disabled={generating || applying || projectDescription.trim().length < 10}>
-              {generating ? "Đang lập kế hoạch..." : "Tạo kế hoạch bằng AI"}
+              {generating ? (
+                <>
+                  <span className="ai-loading-spinner" aria-hidden="true" />
+                  AI đang lập kế hoạch (vui lòng đợi 10–25s, không tải lại trang)...
+                </>
+              ) : "Tạo kế hoạch bằng AI"}
             </button>
           </div>
         </form>

@@ -89,6 +89,8 @@ Thêm `GEMINI_API_KEY` vào `.env` khi chạy cục bộ hoặc vào **Render �
 
 Trong tab **Thành viên**, mỗi thành viên hoặc trưởng nhóm có thể cập nhật thẻ điểm mạnh và ghi chú ngắn. Hồ sơ được lưu riêng theo workspace trong MongoDB `nhip_nhom` (hoặc `store.json` nếu đang dùng chế độ fallback). Ở tab **Bảng việc**, nút **AI lập kế hoạch** tạo bản nháp từ mô tả dự án, sở trường và số việc chưa hoàn thành của thành viên. Hãy xem lại/chỉnh sửa kế hoạch trước khi áp dụng; các nhiệm vụ được lưu qua API tạo nhiệm vụ hiện có.
 
+Khi Gemini trả HTTP 503, máy chủ thử lại tối đa một lần sau 2,5 giây rồi chuyển từ model chính sang `gemini-3.5-flash-lite`. Với HTTP 429, máy chủ dừng yêu cầu mới và giao diện báo chờ khoảng 60 giây trước khi thử lại.
+
 ### Thiết lập email trên Render
 
 Trong Render Dashboard, mở **Web Service → Environment** rồi thêm các biến sau:
