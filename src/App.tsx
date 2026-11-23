@@ -147,8 +147,8 @@ function dateInputValue(value: string) {
 }
 
 function memberColor(member?: Member) {
-  if (!member) return "#a7c7e7";
-  const palette = ["#77bde5", "#8dc9e7", "#a5d5ec", "#84b6d6", "#9acde8"];
+  if (!member) return "#475569";
+  const palette = ["#15803d", "#166534", "#4d7c0f", "#0f766e", "#2563eb"];
   const index = [...member.id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
   return palette[index % palette.length];
 }
@@ -1292,6 +1292,7 @@ export default function App() {
     [tasks, filter, search],
   );
   const doneCount = tasks.filter((task) => task.status === "DONE").length;
+  const inProgressCount = tasks.filter((task) => task.status === "IN_PROGRESS").length;
   const dueSoonCount = tasks.filter((task) => {
     const remaining = Date.parse(task.deadline) - statsNow;
     return task.status !== "DONE" && remaining >= 0 && remaining <= 24 * 60 * 60 * 1_000;
@@ -1304,6 +1305,8 @@ export default function App() {
     (task) => !task.assigneeId || !members.some((member) => member.id === task.assigneeId),
   ).length;
   const completionPercent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
+  const completedShare = tasks.length ? (doneCount / tasks.length) * 100 : 0;
+  const inProgressShare = tasks.length ? (inProgressCount / tasks.length) * 100 : 0;
   const attentionTasks = tasks
     .filter((task) => {
       if (task.status === "DONE") return false;
@@ -1934,7 +1937,7 @@ export default function App() {
                     role="img"
                     aria-label={`${completionPercent}% hoàn thành`}
                     style={{
-                      background: `conic-gradient(#2f855a 0% ${completionPercent}%, #e8edf0 ${completionPercent}% 100%)`,
+                      background: `conic-gradient(#15803d 0% ${completedShare}%, #4d7c0f ${completedShare}% ${completedShare + inProgressShare}%, #e5e7eb ${completedShare + inProgressShare}% 100%)`,
                     }}
                   >
                     <div className="progress-donut-center">
