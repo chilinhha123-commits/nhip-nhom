@@ -1527,6 +1527,12 @@ function GroupNotificationsPanel({
   const [confirmation, setConfirmation] = useState("");
   const [confirmationError, setConfirmationError] = useState(false);
 
+  useEffect(() => {
+    if (!confirmation) return;
+    const timeout = window.setTimeout(() => setConfirmation(""), 4_000);
+    return () => window.clearTimeout(timeout);
+  }, [confirmation]);
+
   async function sendReminder(event: FormEvent) {
     event.preventDefault();
     if (!message.trim()) {
@@ -1623,14 +1629,14 @@ function GroupNotificationsPanel({
               <span>Gửi ẩn danh <small>(hiển thị là “Một thành viên trong nhóm”)</small></span>
             </label>
             {(error || loadError) && <p className="inline-error">{error || loadError}</p>}
+            <button type="submit" className="button primary" disabled={sending || !message.trim()}>
+              {sending ? "Đang gửi..." : "Gửi thông báo cho mọi người"}
+            </button>
             {confirmation && (
               <p className={`notification-send-result${confirmationError ? " is-error" : ""}`} role="status">
                 {confirmation}
               </p>
             )}
-            <button type="submit" className="button primary" disabled={sending || !message.trim()}>
-              {sending ? "Đang gửi..." : "Gửi thông báo cho mọi người"}
-            </button>
           </form>
         </section>
 

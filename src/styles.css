@@ -4881,6 +4881,7 @@ body {
   max-height: min(92vh, 840px);
   display: flex;
   flex-direction: column;
+  gap: 12px;
   padding: 20px;
 }
 
@@ -4891,7 +4892,8 @@ body {
 .notification-compose,
 .notification-history {
   min-height: 0;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -4986,14 +4988,18 @@ body {
 }
 
 .notification-history {
-  overflow: auto;
+  flex: 1 1 auto;
+  overflow: hidden;
   padding-top: 14px;
 }
 
 .notification-list {
   display: grid;
+  min-height: 0;
+  max-height: 220px;
   gap: 8px;
-  overflow: auto;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .notification-item {
