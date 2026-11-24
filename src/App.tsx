@@ -92,6 +92,8 @@ type PlanMode = "strength_first" | "balance_first";
 type AIPlanTask = {
   title: string;
   description: string;
+  deliverable: string;
+  skillCategories?: string[];
   priority: Priority;
   deadline: string | null;
   assigneeIds: string[];
@@ -956,6 +958,15 @@ function AIPlanModal({
                     onChange={(event) => updateTask(item.draftId, { description: event.target.value })}
                   />
                 </label>
+                <label>
+                  Sản phẩm đầu ra
+                  <textarea
+                    value={item.deliverable}
+                    maxLength={240}
+                    rows={2}
+                    onChange={(event) => updateTask(item.draftId, { deliverable: event.target.value })}
+                  />
+                </label>
                 <div className="form-grid">
                   <label>
                     Mức ưu tiên
@@ -992,7 +1003,7 @@ function AIPlanModal({
                     ))}
                   </div>
                 </fieldset>
-                <p className="ai-assignment-reason"><strong>Lý do AI:</strong> {item.assignmentReason || "Đề xuất dựa trên thành viên và khối lượng hiện tại."}</p>
+                <p className="ai-assignment-reason"><strong>Lý do chọn người phụ trách:</strong> {item.assignmentReason || "Đề xuất dựa trên thẻ điểm mạnh, ghi chú hồ sơ và khối lượng hiện tại."}</p>
               </article>
             ))}
             <div className="dialog-actions ai-plan-actions">
@@ -2001,9 +2012,10 @@ export default function App() {
     if (!session) throw new Error("Bạn cần đăng nhập để áp dụng kế hoạch.");
     const invalidItem = items.find((item) =>
       !item.title.trim()
+      || !item.deliverable.trim()
       || !item.assigneeIds.some((id) => members.some((member) => member.id === id)));
     if (invalidItem) {
-      throw new Error(`Đầu việc "${invalidItem.title || "chưa có tên"}" cần tên và ít nhất một người phụ trách.`);
+      throw new Error(`Đầu việc "${invalidItem.title || "chưa có tên"}" cần tên, sản phẩm đầu ra và ít nhất một người phụ trách.`);
     }
     let createdCount = 0;
     for (const item of items) {
@@ -2011,7 +2023,7 @@ export default function App() {
       const deadlineTime = item.deadline ? Date.parse(item.deadline) : NaN;
       const draft: TaskDraft = {
         title: item.title.trim(),
-        description: item.description.trim(),
+        description: `${item.description.trim()}\n\nSản phẩm đầu ra: ${item.deliverable.trim()}`,
         status: "TODO",
         priority: item.priority,
         assigneeId: assignees[0],
