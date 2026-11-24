@@ -4898,8 +4898,7 @@ body {
 }
 
 .notification-compose {
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e5e7eb;
+  flex: 0 0 auto;
 }
 
 .notification-section-heading {
@@ -4923,8 +4922,14 @@ body {
 }
 
 .notification-form {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+}
+
+.notification-form > button[type="submit"] {
+  display: block;
+  width: 100%;
 }
 
 .notification-send-result {
@@ -4989,13 +4994,20 @@ body {
 
 .notification-history {
   flex: 1 1 auto;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
   overflow: hidden;
-  padding-top: 14px;
+}
+
+.notification-history .notification-section-heading {
+  flex: 0 0 auto;
 }
 
 .notification-list {
   display: grid;
   min-height: 0;
+  flex: 0 1 220px;
   max-height: 220px;
   gap: 8px;
   overflow-y: auto;
