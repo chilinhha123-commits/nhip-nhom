@@ -71,7 +71,6 @@ type Config = {
   googleClientId: string;
   demoMode: boolean;
   emailConfigured: boolean;
-  gmailConfigured: boolean;
 };
 
 type UserSession = {
@@ -1509,7 +1508,6 @@ function GroupNotificationsPanel({
   notifications,
   loading,
   loadError,
-  gmailConfigured,
   onClose,
   onSent,
 }: {
@@ -1518,7 +1516,6 @@ function GroupNotificationsPanel({
   notifications: GroupNotification[];
   loading: boolean;
   loadError: string;
-  gmailConfigured: boolean;
   onClose: () => void;
   onSent: (notification: GroupNotification) => void;
 }) {
@@ -1545,17 +1542,19 @@ function GroupNotificationsPanel({
         `/api/workspaces/${workspaceId}/notifications`,
         session,
         { method: "POST", body: JSON.stringify({ message: message.trim(), anonymous }) },
-        60_000,
+        10_000,
       );
       onSent(saved);
-      setConfirmationError(Boolean(saved.emailError));
-      setConfirmation(saved.emailError
-        ? `Đã lưu lời nhắc và gửi email tới ${saved.emailSentCount ?? 0}/${saved.emailRecipientCount ?? 0} thành viên. ${saved.emailError}`
-        : `Đã lưu lời nhắc và gửi email tới ${saved.emailSentCount ?? 0} thành viên!`);
+      const emailSent = (saved.emailRecipientCount ?? 0) > 0
+        && saved.emailSentCount === saved.emailRecipientCount;
+      setConfirmationError(!emailSent);
+      setConfirmation(emailSent
+        ? "Đã gửi lời nhắc qua email tới cả nhóm!"
+        : "Đã lưu lời nhắc trong nhóm, nhưng chưa gửi được email.");
       setMessage("");
       setSelectedTemplate("custom");
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "Không gửi được lời nhắc cho nhóm.");
+    } catch {
+      setError("Chưa gửi được lời nhắc. Vui lòng thử lại.");
     } finally {
       setSending(false);
     }
@@ -1584,9 +1583,6 @@ function GroupNotificationsPanel({
             <h3>Gửi lời nhắc nhẹ nhàng tới cả nhóm</h3>
             <p>Sẽ gửi thông báo qua Email tới toàn bộ thành viên</p>
           </div>
-          {!gmailConfigured && (
-            <p className="notification-email-warning">Email chưa được cấu hình; lời nhắc vẫn sẽ được lưu trong nhóm.</p>
-          )}
           <form className="notification-form" onSubmit={sendReminder}>
             <label>
               Mẫu lời nhắn
@@ -1674,7 +1670,6 @@ export default function App() {
     googleClientId: "",
     demoMode: true,
     emailConfigured: false,
-    gmailConfigured: false,
   });
   const [session, setSession] = useState<UserSession | null>(getStoredUser);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -2767,13 +2762,14 @@ export default function App() {
           notifications={notifications}
           loading={notificationsLoading}
           loadError={notificationsLoadError}
-          gmailConfigured={config.gmailConfigured}
           onClose={() => setShowNotifications(false)}
           onSent={(notification) => {
             setNotifications((current) => mergeNotifications(current, [notification]));
-            setNotice(notification.emailError
-              ? `Đã lưu lời nhắc; gửi email tới ${notification.emailSentCount ?? 0}/${notification.emailRecipientCount ?? 0} thành viên.`
-              : `Đã lưu lời nhắc và gửi email tới ${notification.emailSentCount ?? 0} thành viên!`);
+            const emailSent = (notification.emailRecipientCount ?? 0) > 0
+              && notification.emailSentCount === notification.emailRecipientCount;
+            setNotice(emailSent
+              ? "Đã gửi lời nhắc qua email tới cả nhóm!"
+              : "Đã lưu lời nhắc trong nhóm, nhưng chưa gửi được email.");
           }}
         />
       )}

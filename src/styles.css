@@ -4920,12 +4920,6 @@ body {
   font-size: 10px;
 }
 
-.notification-email-warning {
-  margin: 8px 0 0;
-  color: #92400e;
-  font-size: 11px;
-}
-
 .notification-form {
   display: grid;
   gap: 10px;

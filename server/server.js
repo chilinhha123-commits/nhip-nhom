@@ -513,7 +513,6 @@ app.get("/api/config", (req, res) => {
     demoMode,
     emailConfigured: Boolean(process.env.BREVO_API_KEY
       || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)),
-    gmailConfigured: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
   });
 });
 
@@ -672,17 +671,17 @@ app.post("/api/workspaces/:workspaceId/notifications", authenticate, asyncRoute(
   const text = `Lời nhắc nhẹ nhàng từ nhóm ${workspace.name}\n\n${message}\n\nNgười gửi: ${notification.senderName}\n\nMở bảng việc nhóm: ${appUrl}`;
   let emailResult;
   try {
-    emailResult = await sendMail(
+    emailResult = await sendGroupReminderEmail(
       "[Nhịp Nhóm] Lời nhắc nhẹ nhàng từ nhóm của bạn",
       text,
+      html,
       recipients,
-      { detailed: true, html, forceGmail: true },
     );
   } catch (error) {
     console.error(`Không gửi được email lời nhắc workspace ${workspace.id}:`, error);
     emailResult = {
       emailSentCount: 0,
-      emailError: "Lời nhắc đã được lưu, nhưng gặp lỗi khi gửi email. Hãy xem nhật ký máy chủ.",
+      emailError: "Chưa gửi được email lời nhắc.",
     };
   }
   res.status(201).json({
@@ -903,6 +902,61 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+async function sendGroupReminderEmail(subject, text, html, recipients) {
+  const normalizedRecipients = [...new Set(recipients
+    .filter((email) => typeof email === "string" && isValidEmail(email))
+    .map((email) => normalizeEmail(email)))];
+  if (normalizedRecipients.length === 0) {
+    return { emailSentCount: 0, emailError: "Workspace chưa có email thành viên hợp lệ." };
+  }
+  if (!process.env.BREVO_API_KEY) {
+    console.warn("Brevo chưa được cấu hình; lời nhắc nhóm được lưu nhưng email chưa gửi.");
+    return { emailSentCount: 0, emailError: "Chưa gửi được email lời nhắc." };
+  }
+
+  const [primaryRecipient, ...bccRecipients] = normalizedRecipients;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: {
+          name: "Nhịp Nhóm",
+          email: process.env.GMAIL_USER || "chilinhha123@gmail.com",
+        },
+        to: [{ email: primaryRecipient }],
+        ...(bccRecipients.length ? { bcc: bccRecipients.map((email) => ({ email })) } : {}),
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
+      signal: controller.signal,
+    });
+    const responseBody = await response.text();
+    if (!response.ok) {
+      console.error(`Brevo gửi lời nhắc nhóm thất bại (HTTP ${response.status}): ${responseBody}`);
+      return { emailSentCount: 0, emailError: "Chưa gửi được email lời nhắc." };
+    }
+
+    console.log(`Brevo đã nhận lời nhắc nhóm cho ${normalizedRecipients.length} thành viên.`);
+    return { emailSentCount: normalizedRecipients.length, emailError: null };
+  } catch (error) {
+    if (controller.signal.aborted) {
+      console.warn("Brevo gửi lời nhắc nhóm vượt quá thời gian chờ 6 giây.");
+    } else {
+      console.error("Brevo gửi lời nhắc nhóm gặp lỗi:", error);
+    }
+    return { emailSentCount: 0, emailError: "Chưa gửi được email lời nhắc." };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function sendMail(subject, text, recipients, options = {}) {
